@@ -85,18 +85,16 @@ class TitleBar(QFrame):
         layout.addWidget(title)
         layout.addStretch(1)
 
-        for label, handler in (("—", self.window_ref.showMinimized), ("□", self.toggle_maximize), ("×", self.window_ref.close)):
+        for label, handler in (
+            ("—", self.window_ref.showMinimized),
+            ("□", self.window_ref.toggle_maximize_state),
+            ("×", self.window_ref.close),
+        ):
             btn = QPushButton(label)
             btn.setObjectName("windowControl")
             btn.setFixedSize(42, 30)
             btn.clicked.connect(handler)
             layout.addWidget(btn)
-
-    def toggle_maximize(self) -> None:
-        if self.window_ref.isMaximized():
-            self.window_ref.showNormal()
-        else:
-            self.window_ref.showMaximized()
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.LeftButton:
@@ -104,7 +102,7 @@ class TitleBar(QFrame):
             event.accept()
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
-        if self.drag_pos is not None and event.buttons() & Qt.LeftButton and not self.window_ref.isMaximized():
+        if self.drag_pos is not None and event.buttons() & Qt.LeftButton and not self.window_ref.is_pseudo_maximized():
             self.window_ref.move(event.globalPosition().toPoint() - self.drag_pos)
             event.accept()
 
@@ -114,7 +112,7 @@ class TitleBar(QFrame):
 
     def mouseDoubleClickEvent(self, event) -> None:  # type: ignore[override]
         if event.button() == Qt.LeftButton:
-            self.toggle_maximize()
+            self.window_ref.toggle_maximize_state()
 
 
 class UploadDropFrame(QFrame):

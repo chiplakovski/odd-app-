@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QPoint, QSize, Qt
+from PySide6.QtCore import QDate, QPoint, QRect, QSize, Qt
 from PySide6.QtGui import QAction, QColor, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -81,6 +82,12 @@ class MainWindow(QMainWindow):
         self._current_report_groups: list[list[WorkItem]] = []
         self._table_updating = False
         self._page_count = 0
+        # A custom "maximize" that resizes to the screen's available geometry, rather than
+        # relying on Qt.FramelessWindowHint's native maximize: on Windows the latter reports a
+        # window slightly larger than the visible screen to compensate for the OS resize
+        # border, which makes clicks near the top edge (i.e. our own title bar buttons) land
+        # on the wrong coordinates and get swallowed instead of reaching the buttons.
+        self._restore_geometry: QRect | None = None
 
         self._build_ui()
         self._apply_styles()
@@ -115,11 +122,20 @@ class MainWindow(QMainWindow):
         header.setObjectName("brandHeader")
         header.setMinimumHeight(108)
         header.setMaximumHeight(120)
-        layout = QVBoxLayout(header)
+        layout = QGridLayout(header)
         layout.setContentsMargins(0, 0, 0, 0)
-        # The banner asset already bakes in the full ODD logo, subtitle, shipyard art, and the
-        # "Made by ..." credit, so it renders as one image instead of separately laid-out labels.
-        layout.addWidget(BannerWidget(asset("header_banner.png")))
+        # The banner asset bakes in the full ODD logo, subtitle, and shipyard art (with the
+        # bottom-right corner kept clear); the credit text is a real label stacked on top of
+        # it so its size stays adjustable.
+        banner = BannerWidget(asset("header_banner.png"))
+        layout.addWidget(banner, 0, 0)
+        credit = QLabel(
+            "Made by <span style='color:#47a8ff; font-weight:700;'>Aleksandar Chiplakovski</span> "
+            "exclusively for ODD"
+        )
+        credit.setObjectName("creditLabel")
+        credit.setTextFormat(Qt.RichText)
+        layout.addWidget(credit, 0, 0, Qt.AlignRight | Qt.AlignBottom)
         return header
 
     def _build_sidebar(self) -> QFrame:
@@ -397,6 +413,22 @@ class MainWindow(QMainWindow):
 
     def _apply_styles(self) -> None:
         self.setStyleSheet(build_stylesheet())
+
+    def is_pseudo_maximized(self) -> bool:
+        return self._restore_geometry is not None
+
+    def maximize_to_screen(self) -> None:
+        if self._restore_geometry is not None:
+            return
+        self._restore_geometry = self.geometry()
+        self.setGeometry(self.screen().availableGeometry())
+
+    def toggle_maximize_state(self) -> None:
+        if self._restore_geometry is not None:
+            self.setGeometry(self._restore_geometry)
+            self._restore_geometry = None
+        else:
+            self.maximize_to_screen()
 
     def set_active_nav(self, index: int) -> None:
         for i, btn in enumerate(self.nav_buttons):

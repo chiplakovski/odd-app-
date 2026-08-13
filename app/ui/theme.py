@@ -25,6 +25,7 @@ def build_stylesheet() -> str:
         #windowControl {{ background: transparent; border: none; font-size: 19px; padding: 0; }}
         #windowControl:hover {{ background: rgba(37, 87, 129, 210); }}
         #brandHeader {{ background: rgba(4, 20, 38, 76); border-bottom: 1px solid rgba(67, 128, 177, 130); }}
+        #creditLabel {{ font-size: 9px; color: white; background: transparent; padding: 0 16px 9px 0; }}
         #glassPanel {{ background-color: {PANEL}; border: 1px solid {BORDER}; border-radius: 13px; }}
         #statusCard, #fileCard, #previewHeader {{ background-color: {PANEL_2}; border: 1px solid {BORDER}; border-radius: 10px; }}
         #sectionTitle {{ font-size: 20px; font-weight: 700; }}

@@ -14,7 +14,8 @@ def main() -> int:
     app.setApplicationName(APP_TITLE)
     app.setOrganizationName("ODD")
     window = MainWindow()
-    window.showMaximized()
+    window.show()
+    window.maximize_to_screen()
     return app.exec()
 
 
