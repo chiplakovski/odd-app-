@@ -1,7 +1,8 @@
-"""Modal dialogs: settings, work category selection, litra grouping, summary editing."""
+"""Modal dialogs: settings, work category selection, litra grouping, summary editing, history."""
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -27,7 +28,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import APP_TITLE, ProjectInfo, WORK_CATEGORY_PRESETS
+from ..history import HistoryEntry, clear_history
 from ..models import WorkItem
+from .os_utils import open_with_system_default
 from .theme import SUCCESS, WARNING
 
 
@@ -412,3 +415,90 @@ class GroupItemsDialog(QDialog):
             self.group_name.setFocus()
             return
         self.accept()
+
+
+class HistoryDialog(QDialog):
+    """Shows previously processed work lists and lets the user reopen a generated report."""
+
+    def __init__(self, entries: list[HistoryEntry], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Work List History")
+        self.resize(1000, 560)
+        self.entries = entries
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("Previously processed work lists")
+        title.setObjectName("sectionTitle")
+        layout.addWidget(title)
+
+        self.table = QTreeWidget()
+        self.table.setObjectName("workTree")
+        self.table.setColumnCount(7)
+        self.table.setHeaderLabels(["Date", "Work List", "Project", "Category / Range", "Items", "Reports", "Output"])
+        self.table.setRootIsDecorated(False)
+        self.table.setAlternatingRowColors(False)
+        header = self.table.header()
+        for column in range(6):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.Stretch)
+        self._populate_table()
+        layout.addWidget(self.table, 1)
+
+        if not entries:
+            empty = QLabel("No work lists have been processed yet. Generate a report to see it here.")
+            empty.setObjectName("mutedLabel")
+            layout.addWidget(empty)
+
+        button_row = QHBoxLayout()
+        open_button = QPushButton("Open Selected Report")
+        open_button.setObjectName("secondaryButton")
+        open_button.clicked.connect(self._open_selected)
+        button_row.addWidget(open_button)
+        clear_button = QPushButton("Clear History")
+        clear_button.setObjectName("secondaryButton")
+        clear_button.clicked.connect(self._clear_history)
+        button_row.addWidget(clear_button)
+        button_row.addStretch(1)
+        layout.addLayout(button_row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+    def _populate_table(self) -> None:
+        self.table.clear()
+        for entry in self.entries:
+            row = QTreeWidgetItem(self.table)
+            row.setData(0, Qt.UserRole, entry.output_path)
+            row.setText(0, entry.timestamp.replace("T", "  "))
+            row.setText(1, entry.source_name or "—")
+            row.setText(2, f"{entry.project_name} ({entry.project_number})" if entry.project_name else "—")
+            row.setText(3, f"{entry.category_name} {entry.range_start}-{entry.range_end}")
+            row.setText(4, f"{entry.included_count}/{entry.item_count}")
+            row.setText(5, str(entry.report_count))
+            row.setText(6, entry.output_path or "—")
+
+    def _open_selected(self) -> None:
+        item = self.table.currentItem()
+        if not item:
+            QMessageBox.information(self, APP_TITLE, "Select a row first.")
+            return
+        path = item.data(0, Qt.UserRole)
+        if not path or not Path(path).exists():
+            QMessageBox.information(self, APP_TITLE, "The output file for this entry could not be found.")
+            return
+        open_with_system_default(path)
+
+    def _clear_history(self) -> None:
+        if not self.entries:
+            return
+        answer = QMessageBox.question(self, APP_TITLE, "Clear all work list history? This cannot be undone.")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        clear_history()
+        self.entries = []
+        self._populate_table()

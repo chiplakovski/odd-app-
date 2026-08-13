@@ -1,10 +1,7 @@
 """The main application window."""
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
-from datetime import date
+from datetime import date, datetime
 from html import escape as html_escape
 from pathlib import Path
 
@@ -43,21 +40,29 @@ from ..config import (
 )
 from ..docx_export import compose_group_description, generate_docx, method_label, results_and_supplement
 from ..grouping import apply_auto_grouping, apply_steel_auto_exclusions, display_group_name, group_items
+from ..history import HistoryEntry, add_history_entry, load_history
 from ..models import WorkItem
 from ..pdf_parser import detect_project, extract_pdf_text, parse_work_items
 from .assets import asset, icon
-from .dialogs import EditSummaryDialog, SettingsDialog, WorkCategoryDialog
+from .dialogs import EditSummaryDialog, HistoryDialog, SettingsDialog, WorkCategoryDialog
+from .os_utils import open_with_system_default
 from .theme import SUCCESS, WARNING, build_stylesheet
 from .widgets import BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
 
+DASHBOARD_NAV_INDEX = 0
+IMPORT_NAV_INDEX = 1
 GROUP_NAV_INDEX = 2
+PREVIEW_NAV_INDEX = 3
+GENERATE_NAV_INDEX = 4
+HISTORY_NAV_INDEX = 5
+SETTINGS_NAV_INDEX = 6
 
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.setWindowIcon(QIcon(asset("app_icon.png")))
+        self.setWindowIcon(QIcon(asset("app_icon.ico")))
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
         self.resize(1600, 920)
         self.setMinimumSize(1260, 760)
@@ -128,6 +133,7 @@ class MainWindow(QMainWindow):
             (self._group_nav_label(), "group", self.open_group_items),
             ("Report Preview", "document", self.focus_preview),
             ("Generate Reports", "generate", self.generate_reports),
+            ("History", "file", self.open_history),
             ("Settings", "settings", self.open_settings),
         ]
         self.nav_buttons: list[QPushButton] = []
@@ -396,7 +402,7 @@ class MainWindow(QMainWindow):
             btn.style().polish(btn)
 
     def show_dashboard(self) -> None:
-        self.set_active_nav(0)
+        self.set_active_nav(DASHBOARD_NAV_INDEX)
 
     def open_group_items(self) -> None:
         self.set_active_nav(GROUP_NAV_INDEX)
@@ -420,11 +426,11 @@ class MainWindow(QMainWindow):
             self.analyze_work_list()
 
     def focus_preview(self) -> None:
-        self.set_active_nav(3)
+        self.set_active_nav(PREVIEW_NAV_INDEX)
         self.open_preview_button.setFocus()
 
     def choose_pdf(self) -> None:
-        self.set_active_nav(1)
+        self.set_active_nav(IMPORT_NAV_INDEX)
         path, _ = QFileDialog.getOpenFileName(self, "Select work list", str(Path.home()), "PDF files (*.pdf);;All files (*.*)")
         if path:
             self.set_pdf_path(path)
@@ -695,8 +701,12 @@ class MainWindow(QMainWindow):
             """
         )
 
+    def open_history(self) -> None:
+        self.set_active_nav(HISTORY_NAV_INDEX)
+        HistoryDialog(load_history(), self).exec()
+
     def open_settings(self) -> None:
-        self.set_active_nav(5)
+        self.set_active_nav(SETTINGS_NAV_INDEX)
         dialog = SettingsDialog(self.info, self.grouping_mode, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.info.inspection_company = dialog.company.text().strip()
@@ -718,7 +728,7 @@ class MainWindow(QMainWindow):
             self.status_message("Settings saved.")
 
     def generate_reports(self) -> None:
-        self.set_active_nav(4)
+        self.set_active_nav(GENERATE_NAV_INDEX)
         if not self.items:
             QMessageBox.information(self, APP_TITLE, "Analyze a work list first.")
             return
@@ -736,42 +746,49 @@ class MainWindow(QMainWindow):
             self.last_output = Path(output)
             self.output_folder_label.setText(f"Output Folder: {self.last_output.parent}")
             save_settings(info)
+            self._record_history(info, count)
             self.status_message(f"Created {count} inspection report page(s).")
             self.report_count_label.setText(f"{count} reports ready")
             QMessageBox.information(self, APP_TITLE, f"Created {count} inspection report page(s):\n\n{output}")
-            self._open_with_system_default(output)
+            open_with_system_default(output)
         except Exception as exc:
             self.status_message("Could not generate the reports.", error=True)
             QMessageBox.critical(self, APP_TITLE, str(exc))
 
+    def _record_history(self, info: ProjectInfo, report_count: int) -> None:
+        add_history_entry(
+            HistoryEntry(
+                timestamp=datetime.now().isoformat(timespec="seconds"),
+                source_name=self.source_path.name if self.source_path else "",
+                source_path=str(self.source_path) if self.source_path else "",
+                project_name=info.project_name,
+                project_number=info.project_number,
+                ship_name=self.ship_name.text().strip(),
+                category_name=self.category_name,
+                range_start=self.range_start,
+                range_end=self.range_end,
+                item_count=len(self.items),
+                included_count=sum(1 for item in self.items if item.included),
+                report_count=report_count,
+                output_path=str(self.last_output),
+            )
+        )
+
     def open_output_folder(self) -> None:
         target = self.last_output.parent if self.last_output else (self.source_path.parent if self.source_path else None)
         if target and target.exists():
-            if not self._open_with_system_default(str(target)):
+            if not open_with_system_default(str(target)):
                 QMessageBox.information(self, APP_TITLE, str(target))
         else:
             QMessageBox.information(self, APP_TITLE, "Generate a report first, or load a work list.")
 
     def open_preview(self) -> None:
         if self.last_output and self.last_output.exists():
-            if self._open_with_system_default(str(self.last_output)):
+            if open_with_system_default(str(self.last_output)):
                 return
         QMessageBox.information(
             self, APP_TITLE, "The preview shows the original ODD report form. Generate a report to open the completed Word document."
         )
-
-    @staticmethod
-    def _open_with_system_default(path: str) -> bool:
-        try:
-            if hasattr(os, "startfile"):
-                os.startfile(path)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.run(["open", path], check=False)
-            else:
-                subprocess.run(["xdg-open", path], check=False)
-            return True
-        except Exception:
-            return False
 
     def status_message(self, text: str, error: bool = False) -> None:
         self.footer_status.setText("●  " + text)
