@@ -512,12 +512,33 @@ class MainWindow(QMainWindow):
             self._populate_tree()
             self._update_file_card()
             self._update_report_groups()
+            self._record_work_order_history(ship, project_number)
+            self._update_recent_activity()
             self.status_message(
                 f"Loaded {len(items)} {self.category_name.lower()} items ({self.range_start}–{self.range_end}) from {self.source_path.name}."
             )
         except Exception as exc:
             self.status_message("Could not analyze the work list.", error=True)
             QMessageBox.critical(self, APP_TITLE, str(exc))
+
+    def _record_work_order_history(self, ship: str, project_number: str) -> None:
+        add_history_entry(
+            HistoryEntry(
+                timestamp=datetime.now().isoformat(timespec="seconds"),
+                kind="workorder",
+                source_name=self.source_path.name if self.source_path else "",
+                source_path=str(self.source_path) if self.source_path else "",
+                project_name=ship,
+                project_number=project_number,
+                ship_name=ship,
+                category_name=self.category_name,
+                range_start=self.range_start,
+                range_end=self.range_end,
+                item_count=len(self.items),
+                included_count=sum(1 for item in self.items if item.included),
+                output_path=str(self.source_path) if self.source_path else "",
+            )
+        )
 
     def _populate_tree(self) -> None:
         self._table_updating = True
@@ -719,7 +740,7 @@ class MainWindow(QMainWindow):
                 widget.deleteLater()
         entries = load_history()[:MAX_ACTIVITY_ROWS]
         if not entries:
-            empty = QLabel("No reports or hot work permits generated yet.")
+            empty = QLabel("No work orders, reports, or hot work permits processed yet.")
             empty.setObjectName("mutedLabel")
             empty.setWordWrap(True)
             self.activity_layout.addWidget(empty)
@@ -728,6 +749,10 @@ class MainWindow(QMainWindow):
                 title = f"Item {entry.item_number} · {entry.report_count} permit(s)"
                 subtitle = f"{entry.date_from} to {entry.date_to}"
                 row = ActivityRow("HOT WORK", WARNING, title, subtitle)
+            elif entry.kind == "workorder":
+                title = f"{entry.source_name or entry.project_name or 'Work order'} · {entry.item_count} item(s)"
+                subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp
+                row = ActivityRow("WORK ORDER", SUCCESS, title, subtitle)
             else:
                 title = f"{entry.project_name or 'Report'} · {entry.report_count} report(s)"
                 subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp

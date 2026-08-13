@@ -457,12 +457,12 @@ class HistoryDialog(QDialog):
         layout.addWidget(self.table, 1)
 
         if not entries:
-            empty = QLabel("No work lists have been processed yet. Generate a report to see it here.")
+            empty = QLabel("No work orders, reports, or hot work permits processed yet.")
             empty.setObjectName("mutedLabel")
             layout.addWidget(empty)
 
         button_row = QHBoxLayout()
-        open_button = QPushButton("Open Selected Report")
+        open_button = QPushButton("Open Selected File")
         open_button.setObjectName("secondaryButton")
         open_button.clicked.connect(self._open_selected)
         button_row.addWidget(open_button)
@@ -488,6 +488,10 @@ class HistoryDialog(QDialog):
                 row.setText(1, "Hot Work")
                 row.setText(4, f"Item {entry.item_number} · {entry.date_from} to {entry.date_to}")
                 row.setText(5, f"{entry.report_count} permit(s)")
+            elif entry.kind == "workorder":
+                row.setText(1, "Work Order")
+                row.setText(4, f"{entry.category_name} {entry.range_start}-{entry.range_end}")
+                row.setText(5, f"{entry.item_count} item(s)")
             else:
                 row.setText(1, "Report")
                 row.setText(4, f"{entry.category_name} {entry.range_start}-{entry.range_end}")

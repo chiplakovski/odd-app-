@@ -206,7 +206,7 @@ class ActivityRow(QFrame):
 
         badge = QLabel(kind_label)
         badge.setAlignment(Qt.AlignCenter)
-        badge.setFixedSize(64, 20)
+        badge.setFixedSize(76, 20)
         badge.setStyleSheet(
             f"background: {kind_color}; color: #0a1420; border-radius: 5px; font-weight: 700; font-size: 9px;"
         )
