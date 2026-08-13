@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -10,11 +10,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
 
 from .assets import asset, icon
+from .theme import DANGER, SUCCESS
 
 
 def add_shadow(widget: QWidget, blur: int = 24, opacity: int = 110, y: int = 6) -> None:
@@ -42,6 +44,24 @@ class BackgroundWidget(QWidget):
             painter.drawPixmap(x, y, scaled)
         # A restrained dark-blue grade keeps text readable without hiding the background.
         painter.fillRect(self.rect(), QColor(4, 19, 36, 46))
+        super().paintEvent(event)
+
+
+class BannerWidget(QWidget):
+    """A cover-fit image strip, used for the full-width brand header banner."""
+
+    def __init__(self, image_path: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._pixmap = QPixmap(image_path)
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        if not self._pixmap.isNull():
+            scaled = self._pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            x = (self.width() - scaled.width()) // 2
+            y = (self.height() - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
         super().paintEvent(event)
 
 
@@ -179,3 +199,31 @@ class GroupCard(QFrame):
         if event.button() == Qt.LeftButton:
             self.clicked.emit(self.index)
         super().mousePressEvent(event)
+
+
+class StatusBadgeDelegate(QStyledItemDelegate):
+    """Paints INCLUDED / EXCLUDED cells in a given tree column as a rounded pill."""
+
+    def __init__(self, column: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.column = column
+
+    def paint(self, painter: QPainter, option, index) -> None:  # type: ignore[override]
+        text = index.data(Qt.DisplayRole)
+        if index.column() != self.column or text not in ("INCLUDED", "EXCLUDED"):
+            super().paint(painter, option, index)
+            return
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        background = QColor(SUCCESS) if text == "INCLUDED" else QColor(DANGER)
+        rect = option.rect.adjusted(6, 6, -6, -6)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(background)
+        painter.drawRoundedRect(rect, 8, 8)
+        painter.setPen(QColor("#0a1420"))
+        font = QFont(option.font)
+        font.setBold(True)
+        font.setPointSize(max(7, option.font.pointSize()))
+        painter.setFont(font)
+        painter.drawText(rect, Qt.AlignCenter, text)
+        painter.restore()

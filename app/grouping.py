@@ -148,6 +148,20 @@ def apply_steel_auto_exclusions(items: list[WorkItem], start_item: int, end_item
             item.included = False
 
 
+_DISPLAY_ACRONYMS = {"SWBT", "DWBT", "DBWT", "NDT", "MPI", "HVAC"}
+
+
+def display_group_name(group_key: str) -> str:
+    """Human-friendly Title Case rendering of an (ALL CAPS) group key, for UI display only."""
+    words = []
+    for word in group_key.split(" "):
+        if word.strip("/") in _DISPLAY_ACRONYMS or word == "/":
+            words.append(word)
+        else:
+            words.append(word.capitalize())
+    return " ".join(words)
+
+
 def group_items(items: list[WorkItem], only_finished: bool = True) -> list[list[WorkItem]]:
     grouped: dict[str, list[WorkItem]] = {}
     order: list[str] = []

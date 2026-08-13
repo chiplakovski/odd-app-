@@ -13,6 +13,7 @@ TEXT = "#f4f8fd"
 MUTED = "#b8cee3"
 SUCCESS = "#41d187"
 WARNING = "#f0b458"
+DANGER = "#ef5c6e"
 
 
 def build_stylesheet() -> str:
@@ -24,8 +25,6 @@ def build_stylesheet() -> str:
         #windowControl {{ background: transparent; border: none; font-size: 19px; padding: 0; }}
         #windowControl:hover {{ background: rgba(37, 87, 129, 210); }}
         #brandHeader {{ background: rgba(4, 20, 38, 76); border-bottom: 1px solid rgba(67, 128, 177, 130); }}
-        #brandLogo {{ background: transparent; }}
-        #creditLabel {{ font-size: 13px; color: white; background: transparent; }}
         #glassPanel {{ background-color: {PANEL}; border: 1px solid {BORDER}; border-radius: 13px; }}
         #statusCard, #fileCard, #previewHeader {{ background-color: {PANEL_2}; border: 1px solid {BORDER}; border-radius: 10px; }}
         #sectionTitle {{ font-size: 20px; font-weight: 700; }}

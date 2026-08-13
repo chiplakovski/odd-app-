@@ -77,7 +77,11 @@ def compose_group_description(group: list[WorkItem]) -> str:
     return "\n".join(blocks)
 
 
-def _results_and_supplement(info: ProjectInfo, group: list[WorkItem]) -> tuple[str, str]:
+def method_label(inspection_method: str) -> str:
+    return _METHOD_LABELS.get(inspection_method, inspection_method or "Visual inspection")
+
+
+def results_and_supplement(info: ProjectInfo, group: list[WorkItem]) -> tuple[str, str]:
     result_mode = (info.completion_result or "Automatic (from work list)").strip()
     if result_mode == "Final inspection":
         return (
@@ -122,10 +126,9 @@ def fill_report_table(table, group: list[WorkItem], info: ProjectInfo) -> None:
         desc_size = 6.4
     set_cell_text(content.tables[1].cell(0, 0), desc, desc_size)
 
-    method_text = _METHOD_LABELS.get(info.inspection_method, info.inspection_method or "Visual inspection")
-    set_cell_text(content.tables[2].cell(0, 0), method_text, 8.0)
+    set_cell_text(content.tables[2].cell(0, 0), method_label(info.inspection_method), 8.0)
 
-    results, supplement = _results_and_supplement(info, group)
+    results, supplement = results_and_supplement(info, group)
     set_cell_text(content.tables[3].cell(0, 0), results, 8.0)
     set_cell_text(content.tables[4].cell(0, 0), supplement, 8.0)
 

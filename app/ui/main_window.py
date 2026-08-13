@@ -5,10 +5,11 @@ import os
 import subprocess
 import sys
 from datetime import date
+from html import escape as html_escape
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QPoint, QSize, Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDateEdit,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QTextBrowser,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -39,14 +41,14 @@ from ..config import (
     load_settings,
     save_settings,
 )
-from ..docx_export import compose_group_description, generate_docx
-from ..grouping import apply_auto_grouping, apply_steel_auto_exclusions, group_items
+from ..docx_export import compose_group_description, generate_docx, method_label, results_and_supplement
+from ..grouping import apply_auto_grouping, apply_steel_auto_exclusions, display_group_name, group_items
 from ..models import WorkItem
 from ..pdf_parser import detect_project, extract_pdf_text, parse_work_items
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, SettingsDialog, WorkCategoryDialog
 from .theme import SUCCESS, WARNING, build_stylesheet
-from .widgets import BackgroundWidget, GroupCard, TitleBar, UploadDropFrame, add_shadow
+from .widgets import BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
 
 GROUP_NAV_INDEX = 2
 
@@ -104,26 +106,11 @@ class MainWindow(QMainWindow):
         header.setObjectName("brandHeader")
         header.setMinimumHeight(108)
         header.setMaximumHeight(120)
-        layout = QHBoxLayout(header)
-        layout.setContentsMargins(30, 8, 30, 4)
-        layout.setSpacing(12)
-
-        brand = QLabel()
-        brand.setObjectName("brandLogo")
-        brand_pixmap = QPixmap(asset("brand_logo_transparent.png"))
-        brand.setPixmap(brand_pixmap.scaled(430, 116, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        brand.setMinimumWidth(440)
-        layout.addWidget(brand)
-        layout.addStretch(1)
-
-        credit = QLabel(
-            "Made by <span style='color:#47a8ff; font-weight:700;'>Aleksandar Chiplakovski</span> "
-            "exclusively for ODD"
-        )
-        credit.setObjectName("creditLabel")
-        credit.setTextFormat(Qt.RichText)
-        credit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        layout.addWidget(credit)
+        layout = QVBoxLayout(header)
+        layout.setContentsMargins(0, 0, 0, 0)
+        # The banner asset already bakes in the full ODD logo, subtitle, shipyard art, and the
+        # "Made by ..." credit, so it renders as one image instead of separately laid-out labels.
+        layout.addWidget(BannerWidget(asset("header_banner.png")))
         return header
 
     def _build_sidebar(self) -> QFrame:
@@ -173,6 +160,9 @@ class MainWindow(QMainWindow):
 
     def _group_nav_label(self) -> str:
         return f"Group Items {self.range_start}-{self.range_end}"
+
+    def _work_range_text(self) -> str:
+        return f"{self.range_start} - {self.range_end}"
 
     def _build_center_panel(self) -> QFrame:
         panel = QFrame()
@@ -235,14 +225,14 @@ class MainWindow(QMainWindow):
         fields_layout.setSpacing(6)
         row1 = QHBoxLayout()
         row2 = QHBoxLayout()
-        self.project_name = self._field(row1, "Project Name")
-        self.project_number = self._field(row1, "Project Number")
+        self.project_name = self._field(row1, "Project Name*")
+        self.project_number = self._field(row1, "Project Number*")
         self.ship_name = self._field(row1, "Ship Name")
         self.inspection_date = self._date_field()
         self._field_widget(row2, "Inspection Date", self.inspection_date)
         self.inspectors = self._field(row2, "Inspectors")
         self.inspectors.setText(self.info.inspector_names.replace("\n", "; "))
-        self.work_range = QLineEdit(f"{self.category_name} · {self.range_start}–{self.range_end}")
+        self.work_range = QLineEdit(self._work_range_text())
         self.work_range.setReadOnly(True)
         self._field_widget(row2, "Work List Range", self.work_range)
         fields_layout.addLayout(row1)
@@ -252,7 +242,8 @@ class MainWindow(QMainWindow):
         self.tree = QTreeWidget()
         self.tree.setObjectName("workTree")
         self.tree.setColumnCount(5)
-        self.tree.setHeaderLabels(["", "Item No.", "Status", "Group", "Description"])
+        self.tree.setHeaderLabels(["✓", "Item No.", "Status", "Group", "Description"])
+        self.tree.setItemDelegate(StatusBadgeDelegate(2, self.tree))
         self.tree.setRootIsDecorated(True)
         self.tree.setAlternatingRowColors(False)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -291,7 +282,7 @@ class MainWindow(QMainWindow):
     def _date_field(self) -> QDateEdit:
         edit = QDateEdit()
         edit.setCalendarPopup(True)
-        edit.setDisplayFormat("yyyy-MM-dd")
+        edit.setDisplayFormat("MMM d, yyyy")
         qdate = QDate.fromString(self.info.report_date or date.today().isoformat(), "yyyy-MM-dd")
         edit.setDate(qdate if qdate.isValid() else QDate.currentDate())
         return edit
@@ -362,14 +353,12 @@ class MainWindow(QMainWindow):
         preview_header_layout.addStretch(1)
         layout.addWidget(preview_header)
 
-        self.preview_image = QLabel()
-        self.preview_image.setObjectName("previewImage")
-        self.preview_image.setAlignment(Qt.AlignCenter)
-        self.preview_image.setMinimumHeight(245)
-        self.preview_image.setPixmap(
-            QPixmap(asset("report_preview.png")).scaled(360, 245, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        )
-        layout.addWidget(self.preview_image, 1)
+        self.preview_browser = QTextBrowser()
+        self.preview_browser.setObjectName("previewImage")
+        self.preview_browser.setReadOnly(True)
+        self.preview_browser.setMinimumHeight(245)
+        self.preview_browser.setHtml(self._empty_preview_html())
+        layout.addWidget(self.preview_browser, 1)
 
         self.open_preview_button = QPushButton("Open Preview")
         self.open_preview_button.setIcon(icon("open"))
@@ -418,7 +407,7 @@ class MainWindow(QMainWindow):
         self.category_name = dialog.category_name.text().strip()
         self.range_start = dialog.start_item.value()
         self.range_end = dialog.end_item.value()
-        self.work_range.setText(f"{self.category_name} · {self.range_start}–{self.range_end}")
+        self.work_range.setText(self._work_range_text())
         self.nav_buttons[GROUP_NAV_INDEX].setText(self._group_nav_label())
 
         # Clear the previously displayed department, then re-read the same PDF if loaded.
@@ -507,7 +496,7 @@ class MainWindow(QMainWindow):
 
         for key in order:
             group_item = QTreeWidgetItem(self.tree)
-            group_item.setText(0, f"▾  {key}")
+            group_item.setText(0, f"▾  {display_group_name(key)}")
             group_item.setFirstColumnSpanned(True)
             group_item.setExpanded(True)
             group_item.setBackground(0, QColor("#174a7e"))
@@ -521,15 +510,12 @@ class MainWindow(QMainWindow):
                 child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
                 child.setCheckState(0, Qt.Checked if item.included else Qt.Unchecked)
                 child.setText(1, str(item.number))
-                child.setText(2, item.status)
-                child.setText(3, item.group)
+                child.setText(2, "INCLUDED" if item.included else "EXCLUDED")
+                child.setToolTip(2, f"Work-list status: {item.status or 'Unknown'}")
+                child.setText(3, display_group_name(item.group))
                 child.setText(4, item.summary.replace("\n", " | "))
-                if item.status.lower() in {"finished", "completed"}:
-                    child.setForeground(2, QColor(SUCCESS))
-                elif item.status.lower() == "in progress":
-                    child.setForeground(2, QColor(WARNING))
                 if not item.included:
-                    for column in range(5):
+                    for column in (1, 3, 4):
                         child.setForeground(column, QColor("#7f91a7"))
         self._table_updating = False
 
@@ -654,7 +640,7 @@ class MainWindow(QMainWindow):
         if self.selected_group_index >= len(groups):
             self.selected_group_index = 0
         for index, group in enumerate(groups):
-            name = group[0].group or f"ITEM {group[0].number}"
+            name = display_group_name(group[0].group or f"ITEM {group[0].number}")
             jobs = " / ".join(str(item.number) for item in group)
             card = GroupCard(index, name, jobs, len(group), index == self.selected_group_index)
             card.clicked.connect(self.select_group)
@@ -667,20 +653,47 @@ class MainWindow(QMainWindow):
         self.selected_group_index = index
         self._update_report_groups()
 
+    @staticmethod
+    def _empty_preview_html() -> str:
+        return (
+            "<div style='font-family:Segoe UI; color:#8a97a6; padding:18px; font-size:11px;'>"
+            "Analyze a work list to see a report preview here.</div>"
+        )
+
     def _update_preview(self, groups: list[list[WorkItem]]) -> None:
         if not groups:
             self.preview_file_label.setText("No report selected")
+            self.preview_browser.setHtml(self._empty_preview_html())
             return
         group = groups[self.selected_group_index]
-        name = group[0].group or f"ITEM {group[0].number}"
+        name = display_group_name(group[0].group or f"ITEM {group[0].number}")
         safe_name = name.replace("/", "-")
         self.preview_file_label.setText(f"{safe_name}.docx")
-        preview_tip = (
-            compose_group_description(group)
-            + f"\n\nInspection method: {self.info.inspection_method}"
-            + f"\nResults selection: {self.info.completion_result}"
+
+        info = self._current_info()
+        jobs = "/".join(str(item.number) for item in group)
+        description = html_escape(compose_group_description(group)).replace("\n", "<br>")
+        results, supplement = results_and_supplement(info, group)
+        self.preview_browser.setHtml(
+            f"""
+            <div style='font-family:Segoe UI; color:#182634; padding:12px; font-size:10px; line-height:1.45;'>
+              <div style='font-size:12px; font-weight:700; color:#123a5d;'>INSPECTION AND TEST REPORT</div>
+              <div style='font-size:11px; font-weight:700; color:#2f78b2; margin-bottom:8px;'>{html_escape(name)}</div>
+              <table style='margin-bottom:8px;'>
+                <tr><td style='color:#5a6b7a; padding-right:8px;'>Project name:</td><td><b>{html_escape(info.project_name or '—')}</b></td></tr>
+                <tr><td style='color:#5a6b7a; padding-right:8px;'>Project number:</td><td><b>{html_escape(info.project_number or '—')}</b></td></tr>
+                <tr><td style='color:#5a6b7a; padding-right:8px;'>Job number:</td><td><b>{html_escape(jobs)}</b></td></tr>
+              </table>
+              <div style='font-weight:700; margin-bottom:2px;'>Job description and location:</div>
+              <div style='margin-bottom:8px;'>{description}</div>
+              <div style='font-weight:700; margin-bottom:2px;'>Inspection and testing:</div>
+              <div style='margin-bottom:8px;'>{html_escape(method_label(info.inspection_method))}</div>
+              <div style='font-weight:700; margin-bottom:2px;'>Results:</div>
+              <div>{html_escape(results)}</div>
+              <div style='color:#5a6b7a;'>{html_escape(supplement)}</div>
+            </div>
+            """
         )
-        self.preview_image.setToolTip(preview_tip)
 
     def open_settings(self) -> None:
         self.set_active_nav(5)
