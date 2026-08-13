@@ -162,30 +162,23 @@ class UploadDropFrame(QFrame):
 
 
 class GroupCard(QFrame):
+    """A compact row for one report group: name + item count. Click to jump to
+    that group's rows in the main work list table."""
+
     clicked = Signal(int)
 
-    def __init__(self, index: int, title: str, jobs: str, count: int, selected: bool = False) -> None:
+    def __init__(self, index: int, title: str, count: int, selected: bool = False) -> None:
         super().__init__()
         self.index = index
         self.setObjectName("groupCardSelected" if selected else "groupCard")
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(57)
+        self.setFixedHeight(38)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 7, 10, 7)
+        layout.setContentsMargins(12, 4, 10, 4)
         layout.setSpacing(10)
-        doc = QLabel()
-        doc.setPixmap(icon("document").pixmap(24, 24))
-        layout.addWidget(doc)
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(0)
         title_label = QLabel(title)
         title_label.setObjectName("groupTitle")
-        jobs_label = QLabel(jobs)
-        jobs_label.setObjectName("groupJobs")
-        text_layout.addWidget(title_label)
-        text_layout.addWidget(jobs_label)
-        layout.addLayout(text_layout)
-        layout.addStretch(1)
+        layout.addWidget(title_label, 1)
         badge = QLabel(str(count))
         badge.setObjectName("countBadge")
         badge.setAlignment(Qt.AlignCenter)
@@ -199,6 +192,45 @@ class GroupCard(QFrame):
         if event.button() == Qt.LeftButton:
             self.clicked.emit(self.index)
         super().mousePressEvent(event)
+
+
+class ActivityRow(QFrame):
+    """A compact row in the Recent Activity list: a kind badge, title/subtitle, and an Open button."""
+
+    openRequested = Signal()
+
+    def __init__(self, kind_label: str, kind_color: str, title: str, subtitle: str) -> None:
+        super().__init__()
+        self.setObjectName("groupCard")
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(10)
+
+        badge = QLabel(kind_label)
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setFixedSize(64, 20)
+        badge.setStyleSheet(
+            f"background: {kind_color}; color: #0a1420; border-radius: 5px; font-weight: 700; font-size: 9px;"
+        )
+        layout.addWidget(badge)
+
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(0)
+        title_label = QLabel(title)
+        title_label.setObjectName("groupTitle")
+        title_label.setWordWrap(True)
+        subtitle_label = QLabel(subtitle)
+        subtitle_label.setObjectName("groupJobs")
+        subtitle_label.setWordWrap(True)
+        text_layout.addWidget(title_label)
+        text_layout.addWidget(subtitle_label)
+        layout.addLayout(text_layout, 1)
+
+        open_button = QPushButton("Open")
+        open_button.setObjectName("secondaryButton")
+        open_button.setFixedWidth(66)
+        open_button.clicked.connect(self.openRequested.emit)
+        layout.addWidget(open_button)
 
 
 class StatusBadgeDelegate(QStyledItemDelegate):

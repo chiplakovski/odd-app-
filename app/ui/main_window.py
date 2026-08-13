@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from html import escape as html_escape
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QPoint, QSize, Qt
@@ -23,7 +22,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QTextBrowser,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -38,7 +36,7 @@ from ..config import (
     load_settings,
     save_settings,
 )
-from ..docx_export import compose_group_description, generate_docx, method_label, results_and_supplement
+from ..docx_export import generate_docx
 from ..grouping import apply_auto_grouping, apply_steel_auto_exclusions, display_group_name, group_items
 from ..history import HistoryEntry, add_history_entry, load_history
 from ..hotwork import HotWorkChecklist, item_settings_key, load_item_checklist, save_item_checklist
@@ -48,8 +46,10 @@ from ..pdf_parser import detect_project, extract_pdf_text, parse_work_items
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
-from .theme import SUCCESS, WARNING, build_stylesheet
-from .widgets import BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
+from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
+from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
+
+MAX_ACTIVITY_ROWS = 6
 
 DASHBOARD_NAV_INDEX = 0
 IMPORT_NAV_INDEX = 1
@@ -78,6 +78,7 @@ class MainWindow(QMainWindow):
         self.range_start = 3000
         self.range_end = 3999
         self.selected_group_index = 0
+        self._current_report_groups: list[list[WorkItem]] = []
         self._table_updating = False
         self._page_count = 0
 
@@ -85,6 +86,7 @@ class MainWindow(QMainWindow):
         self._apply_styles()
         self._update_file_card()
         self._update_report_groups()
+        self._update_recent_activity()
 
     def _build_ui(self) -> None:
         # The shipyard photograph is the full-window background. Every UI surface floats above it.
@@ -341,38 +343,37 @@ class MainWindow(QMainWindow):
         self.group_scroll.setMinimumHeight(285)
         layout.addWidget(self.group_scroll)
 
-        preview_header = QFrame()
-        preview_header.setObjectName("previewHeader")
-        preview_header_layout = QHBoxLayout(preview_header)
-        preview_header_layout.setContentsMargins(10, 8, 10, 8)
-        word = QLabel("W")
-        word.setObjectName("wordBadge")
-        word.setAlignment(Qt.AlignCenter)
-        word.setFixedSize(27, 27)
-        preview_header_layout.addWidget(word)
-        preview_texts = QVBoxLayout()
-        ptitle = QLabel("Report Preview")
-        ptitle.setObjectName("groupTitle")
-        self.preview_file_label = QLabel("No report selected")
-        self.preview_file_label.setObjectName("previewFile")
-        preview_texts.addWidget(ptitle)
-        preview_texts.addWidget(self.preview_file_label)
-        preview_header_layout.addLayout(preview_texts)
-        preview_header_layout.addStretch(1)
-        layout.addWidget(preview_header)
+        activity_header = QFrame()
+        activity_header.setObjectName("previewHeader")
+        activity_header_layout = QHBoxLayout(activity_header)
+        activity_header_layout.setContentsMargins(10, 8, 10, 8)
+        activity_icon = QLabel()
+        activity_icon.setPixmap(icon("document").pixmap(22, 22))
+        activity_header_layout.addWidget(activity_icon)
+        activity_title = QLabel("Recent Activity")
+        activity_title.setObjectName("groupTitle")
+        activity_header_layout.addWidget(activity_title)
+        activity_header_layout.addStretch(1)
+        layout.addWidget(activity_header)
 
-        self.preview_browser = QTextBrowser()
-        self.preview_browser.setObjectName("previewImage")
-        self.preview_browser.setReadOnly(True)
-        self.preview_browser.setMinimumHeight(245)
-        self.preview_browser.setHtml(self._empty_preview_html())
-        layout.addWidget(self.preview_browser, 1)
+        self.activity_scroll = QScrollArea()
+        self.activity_scroll.setObjectName("groupScroll")
+        self.activity_scroll.setWidgetResizable(True)
+        self.activity_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.activity_container = QWidget()
+        self.activity_layout = QVBoxLayout(self.activity_container)
+        self.activity_layout.setContentsMargins(0, 0, 0, 0)
+        self.activity_layout.setSpacing(7)
+        self.activity_layout.addStretch(1)
+        self.activity_scroll.setWidget(self.activity_container)
+        self.activity_scroll.setMinimumHeight(245)
+        layout.addWidget(self.activity_scroll, 1)
 
-        self.open_preview_button = QPushButton("Open Preview")
-        self.open_preview_button.setIcon(icon("open"))
-        self.open_preview_button.setObjectName("largeSecondary")
-        self.open_preview_button.clicked.connect(self.open_preview)
-        layout.addWidget(self.open_preview_button)
+        view_history_button = QPushButton("View Full History")
+        view_history_button.setIcon(icon("open"))
+        view_history_button.setObjectName("largeSecondary")
+        view_history_button.clicked.connect(self.open_history)
+        layout.addWidget(view_history_button)
         return panel
 
     def _build_footer(self) -> QFrame:
@@ -501,6 +502,7 @@ class MainWindow(QMainWindow):
         for key in order:
             group_item = QTreeWidgetItem(self.tree)
             group_item.setText(0, f"▾  {display_group_name(key)}")
+            group_item.setData(0, Qt.UserRole, key)
             group_item.setFirstColumnSpanned(True)
             group_item.setExpanded(True)
             group_item.setBackground(0, QColor("#174a7e"))
@@ -527,9 +529,9 @@ class MainWindow(QMainWindow):
         if self._table_updating or column != 0:
             return
         number = tree_item.data(0, Qt.UserRole)
-        if not number:
+        if not isinstance(number, int):
             return
-        item = self._item_by_number(int(number))
+        item = self._item_by_number(number)
         if item:
             item.included = tree_item.checkState(0) == Qt.Checked
             self._update_report_groups()
@@ -539,8 +541,8 @@ class MainWindow(QMainWindow):
         seen: set[int] = set()
         for tree_item in self.tree.selectedItems():
             number = tree_item.data(0, Qt.UserRole)
-            if number and int(number) not in seen:
-                item = self._item_by_number(int(number))
+            if isinstance(number, int) and number not in seen:
+                item = self._item_by_number(number)
                 if item:
                     selected.append(item)
                     seen.add(item.number)
@@ -644,63 +646,70 @@ class MainWindow(QMainWindow):
             if widget:
                 widget.deleteLater()
         groups = group_items(self.items, self.info.only_finished) if self.items else []
+        self._current_report_groups = groups
         if self.selected_group_index >= len(groups):
             self.selected_group_index = 0
         for index, group in enumerate(groups):
             name = display_group_name(group[0].group or f"ITEM {group[0].number}")
-            jobs = " / ".join(str(item.number) for item in group)
-            card = GroupCard(index, name, jobs, len(group), index == self.selected_group_index)
+            card = GroupCard(index, name, len(group), index == self.selected_group_index)
             card.clicked.connect(self.select_group)
             self.group_layout.addWidget(card)
         self.group_layout.addStretch(1)
         self.report_count_label.setText(f"{len(groups)} reports ready")
-        self._update_preview(groups)
 
     def select_group(self, index: int) -> None:
         self.selected_group_index = index
         self._update_report_groups()
+        if 0 <= index < len(self._current_report_groups):
+            group = self._current_report_groups[index]
+            raw_key = group[0].group or f"ITEM {group[0].number}"
+            self._jump_to_group(raw_key)
 
-    @staticmethod
-    def _empty_preview_html() -> str:
-        return (
-            "<div style='font-family:Segoe UI; color:#8a97a6; padding:18px; font-size:11px;'>"
-            "Analyze a work list to see a report preview here.</div>"
-        )
+    def _jump_to_group(self, raw_key: str) -> None:
+        """Scroll the main work list table to and select the given group's rows."""
+        for i in range(self.tree.topLevelItemCount()):
+            group_item = self.tree.topLevelItem(i)
+            if group_item.data(0, Qt.UserRole) != raw_key:
+                continue
+            group_item.setExpanded(True)
+            self.tree.scrollToItem(group_item)
+            self.tree.clearSelection()
+            group_item.setSelected(True)
+            for c in range(group_item.childCount()):
+                group_item.child(c).setSelected(True)
+            break
 
-    def _update_preview(self, groups: list[list[WorkItem]]) -> None:
-        if not groups:
-            self.preview_file_label.setText("No report selected")
-            self.preview_browser.setHtml(self._empty_preview_html())
+    def _update_recent_activity(self) -> None:
+        while self.activity_layout.count():
+            item = self.activity_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        entries = load_history()[:MAX_ACTIVITY_ROWS]
+        if not entries:
+            empty = QLabel("No reports or hot work permits generated yet.")
+            empty.setObjectName("mutedLabel")
+            empty.setWordWrap(True)
+            self.activity_layout.addWidget(empty)
+        for entry in entries:
+            if entry.kind == "hotwork":
+                title = f"Item {entry.item_number} · {entry.report_count} permit(s)"
+                subtitle = f"{entry.date_from} to {entry.date_to}"
+                row = ActivityRow("HOT WORK", WARNING, title, subtitle)
+            else:
+                title = f"{entry.project_name or 'Report'} · {entry.report_count} report(s)"
+                subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp
+                row = ActivityRow("REPORT", ACCENT, title, subtitle)
+            output_path = entry.output_path
+            row.openRequested.connect(lambda p=output_path: self._open_history_output(p))
+            self.activity_layout.addWidget(row)
+        self.activity_layout.addStretch(1)
+
+    def _open_history_output(self, path: str) -> None:
+        if not path or not Path(path).exists():
+            QMessageBox.information(self, APP_TITLE, "That output file could not be found.")
             return
-        group = groups[self.selected_group_index]
-        name = display_group_name(group[0].group or f"ITEM {group[0].number}")
-        safe_name = name.replace("/", "-")
-        self.preview_file_label.setText(f"{safe_name}.docx")
-
-        info = self._current_info()
-        jobs = "/".join(str(item.number) for item in group)
-        description = html_escape(compose_group_description(group)).replace("\n", "<br>")
-        results, supplement = results_and_supplement(info, group)
-        self.preview_browser.setHtml(
-            f"""
-            <div style='font-family:Segoe UI; color:#182634; padding:12px; font-size:10px; line-height:1.45;'>
-              <div style='font-size:12px; font-weight:700; color:#123a5d;'>INSPECTION AND TEST REPORT</div>
-              <div style='font-size:11px; font-weight:700; color:#2f78b2; margin-bottom:8px;'>{html_escape(name)}</div>
-              <table style='margin-bottom:8px;'>
-                <tr><td style='color:#5a6b7a; padding-right:8px;'>Project name:</td><td><b>{html_escape(info.project_name or '—')}</b></td></tr>
-                <tr><td style='color:#5a6b7a; padding-right:8px;'>Project number:</td><td><b>{html_escape(info.project_number or '—')}</b></td></tr>
-                <tr><td style='color:#5a6b7a; padding-right:8px;'>Job number:</td><td><b>{html_escape(jobs)}</b></td></tr>
-              </table>
-              <div style='font-weight:700; margin-bottom:2px;'>Job description and location:</div>
-              <div style='margin-bottom:8px;'>{description}</div>
-              <div style='font-weight:700; margin-bottom:2px;'>Inspection and testing:</div>
-              <div style='margin-bottom:8px;'>{html_escape(method_label(info.inspection_method))}</div>
-              <div style='font-weight:700; margin-bottom:2px;'>Results:</div>
-              <div>{html_escape(results)}</div>
-              <div style='color:#5a6b7a;'>{html_escape(supplement)}</div>
-            </div>
-            """
-        )
+        open_with_system_default(path)
 
     def open_hotwork_dialog(self) -> None:
         self.set_active_nav(HOTWORK_NAV_INDEX)
@@ -761,6 +770,7 @@ class MainWindow(QMainWindow):
         if errors:
             QMessageBox.warning(self, APP_TITLE, "Some permits could not be generated:\n\n" + "\n".join(errors))
         if generated:
+            self._update_recent_activity()
             self.status_message(f"Created {generated} hot work permit file(s).")
             QMessageBox.information(self, APP_TITLE, f"Created {generated} hot work permit file(s) in:\n\n{out_dir_path}")
             open_with_system_default(str(out_dir_path))
@@ -768,6 +778,7 @@ class MainWindow(QMainWindow):
     def open_history(self) -> None:
         self.set_active_nav(HISTORY_NAV_INDEX)
         HistoryDialog(load_history(), self).exec()
+        self._update_recent_activity()
 
     def open_settings(self) -> None:
         self.set_active_nav(SETTINGS_NAV_INDEX)
@@ -811,6 +822,7 @@ class MainWindow(QMainWindow):
             self.output_folder_label.setText(f"Output Folder: {self.last_output.parent}")
             save_settings(info)
             self._record_history(info, count)
+            self._update_recent_activity()
             self.status_message(f"Created {count} inspection report page(s).")
             self.report_count_label.setText(f"{count} reports ready")
             QMessageBox.information(self, APP_TITLE, f"Created {count} inspection report page(s):\n\n{output}")
@@ -845,14 +857,6 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, APP_TITLE, str(target))
         else:
             QMessageBox.information(self, APP_TITLE, "Generate a report first, or load a work list.")
-
-    def open_preview(self) -> None:
-        if self.last_output and self.last_output.exists():
-            if open_with_system_default(str(self.last_output)):
-                return
-        QMessageBox.information(
-            self, APP_TITLE, "The preview shows the original ODD report form. Generate a report to open the completed Word document."
-        )
 
     def status_message(self, text: str, error: bool = False) -> None:
         self.footer_status.setText("●  " + text)
