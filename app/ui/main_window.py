@@ -54,11 +54,10 @@ from .widgets import BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDeleg
 DASHBOARD_NAV_INDEX = 0
 IMPORT_NAV_INDEX = 1
 GROUP_NAV_INDEX = 2
-PREVIEW_NAV_INDEX = 3
-GENERATE_NAV_INDEX = 4
-HOTWORK_NAV_INDEX = 5
-HISTORY_NAV_INDEX = 6
-SETTINGS_NAV_INDEX = 7
+GENERATE_NAV_INDEX = 3
+HOTWORK_NAV_INDEX = 4
+HISTORY_NAV_INDEX = 5
+SETTINGS_NAV_INDEX = 6
 
 
 class MainWindow(QMainWindow):
@@ -134,7 +133,6 @@ class MainWindow(QMainWindow):
             ("Dashboard", "home", self.show_dashboard),
             ("Import Work List", "upload", self.choose_pdf),
             (self._group_nav_label(), "group", self.open_group_items),
-            ("Report Preview", "document", self.focus_preview),
             ("Generate Reports", "generate", self.generate_reports),
             ("Hot Work Permits", "check", self.open_hotwork_dialog),
             ("History", "file", self.open_history),
@@ -428,10 +426,6 @@ class MainWindow(QMainWindow):
         self.status_message(f"Selected {self.category_name} items {self.range_start}–{self.range_end}.")
         if self.source_path:
             self.analyze_work_list()
-
-    def focus_preview(self) -> None:
-        self.set_active_nav(PREVIEW_NAV_INDEX)
-        self.open_preview_button.setFocus()
 
     def choose_pdf(self) -> None:
         self.set_active_nav(IMPORT_NAV_INDEX)
