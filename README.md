@@ -70,14 +70,20 @@ The report layout comes from `app/templates/Inspection_Master_Template.docx`.
 Drop in a replacement file with the same name to change the report design,
 or pass a different template path to `generate_docx()` / `--template`.
 
-## Work list history
+## History
 
-Every time "Generate DOCX Reports" completes, an entry (source PDF, project,
-category/range, item counts, and the generated `.docx` path) is appended to
-`work_list_history.json` next to `settings.json` in the app's per-user data
-folder. Open it from the **History** item in the sidebar to browse past runs
-and reopen a previously generated report. Hot work permit runs (below) are
-recorded in the same history list.
+Three kinds of activity are logged to `work_list_history.json` (next to
+`settings.json` in the app's per-user data folder) and shown in both the
+**History** dialog and the "Recent Activity" panel on the dashboard:
+
+- **Work Order** — every time "Analyze Work List" successfully parses a PDF
+  work list, recording the source file, project/ship, category/range, and
+  item count. Its "Open" action opens that source PDF.
+- **Report** — every time "Generate DOCX Reports" completes.
+- **Hot Work** — every hot work permit file generated (see below).
+
+Each entry's "Open" action opens the relevant output (or source) file
+directly.
 
 ## Hot work permits
 
