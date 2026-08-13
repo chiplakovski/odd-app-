@@ -13,20 +13,24 @@ app/
   pdf_parser.py      PDF text extraction + work-list parsing
   grouping.py         automatic grouping of items into report sections
   docx_export.py      Word report generation from the master template
-  history.py           persisted history of processed work lists
-  cli.py                 command-line report generation (no GUI)
-  main.py                 GUI entry point
+  history.py           persisted history of processed work lists / permits
+  hotwork.py             hot work permit checklist model + per-item settings
+  hotwork_export.py        hot work permit .docx generation (OOXML)
+  cli.py                     command-line report generation (no GUI)
+  main.py                     GUI entry point
   ui/
-    theme.py                colours + stylesheet
-    assets.py               asset/icon path helpers
-    os_utils.py              "open with system default app" helper
-    widgets.py                background, title bar, drop zone, group card
-    dialogs.py                 settings, category picker, litra grouping,
-                                 summary editor, work list history
-    main_window.py               main window
+    theme.py                    colours + stylesheet
+    assets.py                   asset/icon path helpers
+    os_utils.py                  "open with system default app" helper
+    widgets.py                    background, title bar, drop zone, group card
+    dialogs.py                     settings, category picker, litra grouping,
+                                     summary editor, work list history,
+                                     hot work permit configuration
+    main_window.py                   main window
   assets/                 images, icons, app_icon.ico
   templates/
     Inspection_Master_Template.docx
+    Hot_Work_Permit_Template.docx
 launcher.py         standalone entry point used by the packaged build
 packaging/
   build.spec         PyInstaller build spec
@@ -72,7 +76,34 @@ Every time "Generate DOCX Reports" completes, an entry (source PDF, project,
 category/range, item counts, and the generated `.docx` path) is appended to
 `work_list_history.json` next to `settings.json` in the app's per-user data
 folder. Open it from the **History** item in the sidebar to browse past runs
-and reopen a previously generated report.
+and reopen a previously generated report. Hot work permit runs (below) are
+recorded in the same history list.
+
+## Hot work permits
+
+Select one or more work items in the table (checkbox column, or highlight
+rows), then use **Hot Work Permits** in the sidebar (or right-click →
+"Generate Hot Work Permit(s)...") to open the configuration dialog:
+
+- Pick the permit's valid date range ("From" / "To"). The permit template is
+  only ever valid for a single day or shift, so one permit **page** is
+  generated per calendar day in that range.
+- Tick the work method(s), the fire-hazard/checklist answers, and set the
+  location, dock/quay, and start/stop time.
+- Click **Generate Permits** and choose one output folder. The app writes one
+  `.docx` per selected item — e.g. selecting items 3004 and 3100 with a
+  10-day range produces two files, each containing 10 permit pages (one per
+  day).
+
+Each item's checklist answers are remembered (keyed by project number + item
+number) in `hotwork_item_settings.json`, so reopening the dialog for the same
+litra later recalls your last choices instead of starting blank.
+
+The permit's fillable fields are implemented as floating text boxes and
+`w14` checkbox content controls (not plain paragraphs), so
+`app/hotwork_export.py` edits the underlying OOXML directly — see the module
+docstring for the field/checkbox ordering the code depends on if you ever
+need to adapt this to a different permit template.
 
 ## Building a Windows installer (desktop icon)
 

@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDateEdit,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -17,8 +20,12 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QRadioButton,
+    QScrollArea,
     QSpinBox,
     QTextEdit,
     QTreeWidget,
@@ -29,6 +36,8 @@ from PySide6.QtWidgets import (
 
 from ..config import APP_TITLE, ProjectInfo, WORK_CATEGORY_PRESETS
 from ..history import HistoryEntry, clear_history
+from ..hotwork import HotWorkChecklist
+from ..hotwork_export import default_location
 from ..models import WorkItem
 from .os_utils import open_with_system_default
 from .theme import SUCCESS, WARNING
@@ -437,7 +446,7 @@ class HistoryDialog(QDialog):
         self.table = QTreeWidget()
         self.table.setObjectName("workTree")
         self.table.setColumnCount(7)
-        self.table.setHeaderLabels(["Date", "Work List", "Project", "Category / Range", "Items", "Reports", "Output"])
+        self.table.setHeaderLabels(["Date", "Type", "Work List", "Project", "Detail", "Count", "Output"])
         self.table.setRootIsDecorated(False)
         self.table.setAlternatingRowColors(False)
         header = self.table.header()
@@ -475,11 +484,16 @@ class HistoryDialog(QDialog):
             row = QTreeWidgetItem(self.table)
             row.setData(0, Qt.UserRole, entry.output_path)
             row.setText(0, entry.timestamp.replace("T", "  "))
-            row.setText(1, entry.source_name or "—")
-            row.setText(2, f"{entry.project_name} ({entry.project_number})" if entry.project_name else "—")
-            row.setText(3, f"{entry.category_name} {entry.range_start}-{entry.range_end}")
-            row.setText(4, f"{entry.included_count}/{entry.item_count}")
-            row.setText(5, str(entry.report_count))
+            if entry.kind == "hotwork":
+                row.setText(1, "Hot Work")
+                row.setText(4, f"Item {entry.item_number} · {entry.date_from} to {entry.date_to}")
+                row.setText(5, f"{entry.report_count} permit(s)")
+            else:
+                row.setText(1, "Report")
+                row.setText(4, f"{entry.category_name} {entry.range_start}-{entry.range_end}")
+                row.setText(5, f"{entry.report_count} report(s)")
+            row.setText(2, entry.source_name or "—")
+            row.setText(3, f"{entry.project_name} ({entry.project_number})" if entry.project_name else "—")
             row.setText(6, entry.output_path or "—")
 
     def _open_selected(self) -> None:
@@ -502,3 +516,266 @@ class HistoryDialog(QDialog):
         clear_history()
         self.entries = []
         self._populate_table()
+
+
+class HotWorkDialog(QDialog):
+    """Configure and generate Hot Work Permits for one or more selected litras.
+
+    One .docx is produced per item, containing one permit page per calendar day
+    in the selected date range (the permit itself is only ever valid for a
+    single day or shift, per the template).
+    """
+
+    def __init__(self, items: list[WorkItem], vessel: str, initial: HotWorkChecklist, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Generate Hot Work Permits")
+        self.resize(760, 760)
+        self.items = items
+        self.vessel = vessel
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(18, 18, 18, 18)
+        outer.setSpacing(10)
+
+        title = QLabel("Generate Hot Work Permits")
+        title.setObjectName("sectionTitle")
+        outer.addWidget(title)
+
+        if not items:
+            warning = QLabel("Select one or more work items in the work list first, then reopen this dialog.")
+            warning.setObjectName("mutedLabel")
+            warning.setWordWrap(True)
+            outer.addWidget(warning)
+
+        selected_list = QListWidget()
+        selected_list.setObjectName("workTree")
+        selected_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        selected_list.setMaximumHeight(90)
+        for item in items:
+            QListWidgetItem(f"{item.number} · {default_location(item)}", selected_list)
+        outer.addWidget(selected_list)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("groupScroll")
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        form = QVBoxLayout(content)
+        form.setSpacing(10)
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
+
+        # --- Date range ---
+        form.addWidget(self._section_label("Permit valid dates (one permit page is generated per day)"))
+        date_row = QHBoxLayout()
+        today = QDate.currentDate()
+        self.date_from = QDateEdit(today)
+        self.date_from.setCalendarPopup(True)
+        self.date_from.setDisplayFormat("MMM d, yyyy")
+        self.date_to = QDateEdit(today)
+        self.date_to.setCalendarPopup(True)
+        self.date_to.setDisplayFormat("MMM d, yyyy")
+        date_row.addWidget(QLabel("From"))
+        date_row.addWidget(self.date_from, 1)
+        date_row.addSpacing(12)
+        date_row.addWidget(QLabel("To"))
+        date_row.addWidget(self.date_to, 1)
+        form.addLayout(date_row)
+
+        # --- Location / logistics ---
+        form.addWidget(self._section_label("Location"))
+        logistics_row = QHBoxLayout()
+        self.location = QLineEdit(initial.location)
+        self.location.setPlaceholderText("Leave blank to use each item's own area")
+        self.dock_quay = QLineEdit(initial.dock_quay)
+        logistics_row.addWidget(self._labeled(self.location, "Location / Workplace override"), 2)
+        logistics_row.addWidget(self._labeled(self.dock_quay, "Dock / Quay"), 1)
+        form.addLayout(logistics_row)
+
+        time_row = QHBoxLayout()
+        self.start_time = QLineEdit(initial.start_time)
+        self.stop_time = QLineEdit(initial.stop_time)
+        time_row.addWidget(self._labeled(self.start_time, "Start Time (HH:MM)"), 1)
+        time_row.addWidget(self._labeled(self.stop_time, "Stop Time (HH:MM)"), 1)
+        form.addLayout(time_row)
+
+        # --- Work method ---
+        form.addWidget(self._section_label("Work method"))
+        method_row = QHBoxLayout()
+        self.welding = self._checkbox(method_row, "Welding", initial.welding)
+        self.grinding = self._checkbox(method_row, "Grinding", initial.grinding)
+        self.cutting = self._checkbox(method_row, "Cutting", initial.cutting)
+        self.soldering = self._checkbox(method_row, "Soldering", initial.soldering)
+        self.hot_air = self._checkbox(method_row, "Hot air", initial.hot_air)
+        self.other = self._checkbox(method_row, "Other", initial.other)
+        form.addLayout(method_row)
+        self.other_text = QLineEdit(initial.other_text)
+        self.other_text.setPlaceholderText("Specify other work method")
+        form.addWidget(self.other_text)
+
+        # --- MME fire hazard ---
+        self.mme_yes, self.mme_no = self._yes_no_row(
+            form, "Can the combination of Method, Material & Environment cause a fire hazard?", initial.mme_fire_hazard
+        )
+
+        # --- Numbered checklist ---
+        form.addWidget(self._section_label("Checklist"))
+        self.item_0 = self._checkbox_line(form, "0 — The permit issuer is appointed.", initial.item_0_issuer_appointed)
+        self.item_1 = self._checkbox_line(
+            form, "1 — The operator has a valid Swedish Hot Work Certificate.", initial.item_1_operator_certified
+        )
+        self.fire_watch_yes, self.fire_watch_no = self._yes_no_row(
+            form, "2A — A competent Fire-Watch has been arranged.", initial.fire_watch_arranged
+        )
+        self.fire_watch_motivation = QLineEdit(initial.fire_watch_motivation)
+        self.fire_watch_motivation.setPlaceholderText("If not arranged, specify the motivation / risk evaluation outcome")
+        form.addWidget(self.fire_watch_motivation)
+        self.item_2b = self._checkbox_line(
+            form, "2B — Post-work monitoring (≥ 1 hour) has been arranged.", initial.item_2b_post_work_monitoring
+        )
+        self.item_3 = self._checkbox_line(
+            form, "3 — Confined space permit stated, if applicable.", initial.item_3_confined_space_permit
+        )
+        self.item_4 = self._checkbox_line(form, "4 — The workplace is tidy and wetted down if necessary.", initial.item_4_workplace_tidy)
+        self.item_5 = self._checkbox_line(
+            form, "5 — Combustible material is removed, covered, or screened off.", initial.item_5_combustibles_removed
+        )
+        self.heat_structures_yes, self.heat_structures_no = self._yes_no_row(
+            form, "6A — Heat-conducting / concealed combustible structures present.", initial.heat_conducting_structures_present
+        )
+        self.item_6b = self._checkbox_line(
+            form, "6B — These are protected and accessible for extinguishing fire.", initial.item_6b_protected_accessible
+        )
+        self.openings_yes, self.openings_no = self._yes_no_row(
+            form, "7A — Gaps, holes, penetrations or other openings present.", initial.openings_present
+        )
+        self.item_7b = self._checkbox_line(form, "7B — These openings are sealed or checked and protected.", initial.item_7b_openings_sealed)
+        self.item_8 = self._checkbox_line(
+            form, "8 — Sufficient fire-fighting equipment is available.", initial.item_8_firefighting_equipment
+        )
+        self.item_9 = self._checkbox_line(form, "9 — Welding equipment is free from defects.", initial.item_9_welding_equipment_ok)
+        self.item_10 = self._checkbox_line(
+            form, "10 — Emergency services / fire brigade can be alerted immediately.", initial.item_10_emergency_services_reachable
+        )
+
+        # --- Fire alarm disconnected ---
+        form.addWidget(self._section_label("Automatic fire alarm / extinguishing system disconnected during the work"))
+        alarm_row = QHBoxLayout()
+        self.alarm_group = QButtonGroup(self)
+        self.alarm_yes = QRadioButton("Yes")
+        self.alarm_no = QRadioButton("No")
+        self.alarm_na = QRadioButton("N/A")
+        for button in (self.alarm_yes, self.alarm_no, self.alarm_na):
+            self.alarm_group.addButton(button)
+            alarm_row.addWidget(button)
+        alarm_row.addStretch(1)
+        {"yes": self.alarm_yes, "no": self.alarm_no, "na": self.alarm_na}.get(initial.fire_alarm_disconnected, self.alarm_yes).setChecked(True)
+        form.addLayout(alarm_row)
+
+        form.addStretch(1)
+
+        note = QLabel("Settings are remembered per item, so reopening this dialog for the same litra recalls your last choices.")
+        note.setObjectName("mutedLabel")
+        note.setWordWrap(True)
+        outer.addWidget(note)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        generate_button = QPushButton("Generate Permits")
+        generate_button.setObjectName("largePrimary")
+        generate_button.setEnabled(bool(items))
+        generate_button.clicked.connect(self.validate_and_accept)
+        buttons.addButton(generate_button, QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.rejected.connect(self.reject)
+        outer.addWidget(buttons)
+
+    @staticmethod
+    def _section_label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("fieldLabel")
+        label.setWordWrap(True)
+        return label
+
+    @staticmethod
+    def _labeled(widget: QWidget, label_text: str) -> QWidget:
+        wrap = QWidget()
+        layout = QVBoxLayout(wrap)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        label = QLabel(label_text)
+        label.setObjectName("fieldLabel")
+        layout.addWidget(label)
+        layout.addWidget(widget)
+        return wrap
+
+    @staticmethod
+    def _checkbox(row: QHBoxLayout, text: str, checked: bool) -> QCheckBox:
+        box = QCheckBox(text)
+        box.setChecked(checked)
+        row.addWidget(box)
+        return box
+
+    @staticmethod
+    def _checkbox_line(form: QVBoxLayout, text: str, checked: bool) -> QCheckBox:
+        box = QCheckBox(text)
+        box.setChecked(checked)
+        form.addWidget(box)
+        return box
+
+    @staticmethod
+    def _yes_no_row(form: QVBoxLayout, label_text: str, yes_checked: bool) -> tuple[QRadioButton, QRadioButton]:
+        row = QHBoxLayout()
+        label = QLabel(label_text)
+        label.setWordWrap(True)
+        row.addWidget(label, 1)
+        yes = QRadioButton("Yes")
+        no = QRadioButton("No")
+        yes.setChecked(yes_checked)
+        no.setChecked(not yes_checked)
+        row.addWidget(yes)
+        row.addWidget(no)
+        form.addLayout(row)
+        return yes, no
+
+    def date_range(self) -> tuple[date, date]:
+        return self.date_from.date().toPython(), self.date_to.date().toPython()
+
+    def build_checklist(self) -> HotWorkChecklist:
+        return HotWorkChecklist(
+            welding=self.welding.isChecked(),
+            grinding=self.grinding.isChecked(),
+            cutting=self.cutting.isChecked(),
+            soldering=self.soldering.isChecked(),
+            hot_air=self.hot_air.isChecked(),
+            other=self.other.isChecked(),
+            other_text=self.other_text.text().strip(),
+            mme_fire_hazard=self.mme_yes.isChecked(),
+            item_0_issuer_appointed=self.item_0.isChecked(),
+            item_1_operator_certified=self.item_1.isChecked(),
+            fire_watch_arranged=self.fire_watch_yes.isChecked(),
+            fire_watch_motivation=self.fire_watch_motivation.text().strip(),
+            item_2b_post_work_monitoring=self.item_2b.isChecked(),
+            item_3_confined_space_permit=self.item_3.isChecked(),
+            item_4_workplace_tidy=self.item_4.isChecked(),
+            item_5_combustibles_removed=self.item_5.isChecked(),
+            heat_conducting_structures_present=self.heat_structures_yes.isChecked(),
+            item_6b_protected_accessible=self.item_6b.isChecked(),
+            openings_present=self.openings_yes.isChecked(),
+            item_7b_openings_sealed=self.item_7b.isChecked(),
+            item_8_firefighting_equipment=self.item_8.isChecked(),
+            item_9_welding_equipment_ok=self.item_9.isChecked(),
+            item_10_emergency_services_reachable=self.item_10.isChecked(),
+            fire_alarm_disconnected="yes" if self.alarm_yes.isChecked() else "no" if self.alarm_no.isChecked() else "na",
+            location=self.location.text().strip(),
+            dock_quay=self.dock_quay.text().strip(),
+            start_time=self.start_time.text().strip(),
+            stop_time=self.stop_time.text().strip(),
+        )
+
+    def validate_and_accept(self) -> None:
+        if not self.items:
+            QMessageBox.warning(self, APP_TITLE, "Select one or more work items first.")
+            return
+        start, end = self.date_range()
+        if not self.start_time.text().strip() or not self.stop_time.text().strip():
+            QMessageBox.warning(self, APP_TITLE, "Enter both a start time and a stop time.")
+            return
+        self.accept()

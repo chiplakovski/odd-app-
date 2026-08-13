@@ -41,10 +41,12 @@ from ..config import (
 from ..docx_export import compose_group_description, generate_docx, method_label, results_and_supplement
 from ..grouping import apply_auto_grouping, apply_steel_auto_exclusions, display_group_name, group_items
 from ..history import HistoryEntry, add_history_entry, load_history
+from ..hotwork import HotWorkChecklist, item_settings_key, load_item_checklist, save_item_checklist
+from ..hotwork_export import generate_hotwork_permits
 from ..models import WorkItem
 from ..pdf_parser import detect_project, extract_pdf_text, parse_work_items
 from .assets import asset, icon
-from .dialogs import EditSummaryDialog, HistoryDialog, SettingsDialog, WorkCategoryDialog
+from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
 from .theme import SUCCESS, WARNING, build_stylesheet
 from .widgets import BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
@@ -54,8 +56,9 @@ IMPORT_NAV_INDEX = 1
 GROUP_NAV_INDEX = 2
 PREVIEW_NAV_INDEX = 3
 GENERATE_NAV_INDEX = 4
-HISTORY_NAV_INDEX = 5
-SETTINGS_NAV_INDEX = 6
+HOTWORK_NAV_INDEX = 5
+HISTORY_NAV_INDEX = 6
+SETTINGS_NAV_INDEX = 7
 
 
 class MainWindow(QMainWindow):
@@ -133,6 +136,7 @@ class MainWindow(QMainWindow):
             (self._group_nav_label(), "group", self.open_group_items),
             ("Report Preview", "document", self.focus_preview),
             ("Generate Reports", "generate", self.generate_reports),
+            ("Hot Work Permits", "check", self.open_hotwork_dialog),
             ("History", "file", self.open_history),
             ("Settings", "settings", self.open_settings),
         ]
@@ -560,11 +564,13 @@ class MainWindow(QMainWindow):
         merge_action = QAction("Combine selected litras into one report", self)
         new_group_action = QAction("Put selected in new report group", self)
         edit_action = QAction("Edit selected summary", self)
+        hotwork_action = QAction("Generate Hot Work Permit(s)...", self)
         include_action.triggered.connect(lambda: self.set_selected_included(True))
         exclude_action.triggered.connect(lambda: self.set_selected_included(False))
         merge_action.triggered.connect(self.merge_selected)
         new_group_action.triggered.connect(self.new_group_selected)
         edit_action.triggered.connect(self.edit_selected_summary)
+        hotwork_action.triggered.connect(self.open_hotwork_dialog)
         menu.addAction(include_action)
         menu.addAction(exclude_action)
         menu.addSeparator()
@@ -572,6 +578,7 @@ class MainWindow(QMainWindow):
         menu.addAction(new_group_action)
         menu.addSeparator()
         menu.addAction(edit_action)
+        menu.addAction(hotwork_action)
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
     def set_selected_included(self, included: bool) -> None:
@@ -700,6 +707,69 @@ class MainWindow(QMainWindow):
             </div>
             """
         )
+
+    def open_hotwork_dialog(self) -> None:
+        self.set_active_nav(HOTWORK_NAV_INDEX)
+        selected = self.selected_work_items()
+        if not selected:
+            QMessageBox.information(self, APP_TITLE, "Select one or more work items in the table first.")
+            return
+        vessel = self.ship_name.text().strip() or self.project_name.text().strip()
+        project_number = self.project_number.text().strip()
+        first_key = item_settings_key(project_number, selected[0].number)
+        initial = load_item_checklist(first_key) or HotWorkChecklist()
+
+        dialog = HotWorkDialog(selected, vessel, initial, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        start_date, end_date = dialog.date_range()
+        checklist = dialog.build_checklist()
+
+        default_dir = str(self.last_output.parent if self.last_output else (self.source_path.parent if self.source_path else Path.home()))
+        out_dir = QFileDialog.getExistingDirectory(self, "Select a folder for the hot work permit files", default_dir)
+        if not out_dir:
+            return
+        out_dir_path = Path(out_dir)
+
+        generated = 0
+        errors: list[str] = []
+        for item in selected:
+            safe_project = (project_number or "Project").replace(" ", "_")
+            file_name = f"{safe_project}_HotWork_{item.number}_{start_date.isoformat()}_to_{end_date.isoformat()}.docx"
+            output_path = out_dir_path / file_name
+            try:
+                page_count = generate_hotwork_permits(item, vessel, checklist, start_date, end_date, output_path)
+            except Exception as exc:
+                errors.append(f"Item {item.number}: {exc}")
+                continue
+            save_item_checklist(item_settings_key(project_number, item.number), checklist)
+            add_history_entry(
+                HistoryEntry(
+                    timestamp=datetime.now().isoformat(timespec="seconds"),
+                    kind="hotwork",
+                    source_name=self.source_path.name if self.source_path else "",
+                    source_path=str(self.source_path) if self.source_path else "",
+                    project_name=self.project_name.text().strip(),
+                    project_number=project_number,
+                    ship_name=vessel,
+                    item_count=1,
+                    included_count=1,
+                    report_count=page_count,
+                    output_path=str(output_path),
+                    item_number=item.number,
+                    date_from=start_date.isoformat(),
+                    date_to=end_date.isoformat(),
+                )
+            )
+            generated += 1
+
+        if errors:
+            QMessageBox.warning(self, APP_TITLE, "Some permits could not be generated:\n\n" + "\n".join(errors))
+        if generated:
+            self.status_message(f"Created {generated} hot work permit file(s).")
+            QMessageBox.information(self, APP_TITLE, f"Created {generated} hot work permit file(s) in:\n\n{out_dir_path}")
+            open_with_system_default(str(out_dir_path))
 
     def open_history(self) -> None:
         self.set_active_nav(HISTORY_NAV_INDEX)

@@ -42,6 +42,12 @@ def build_stylesheet() -> str:
         #previewImage {{ background: rgba(245, 247, 250, 244); border-radius: 7px; border: 1px solid #456f94; padding: 8px; }}
         QLineEdit, QDateEdit, QComboBox, QSpinBox, QTextEdit {{ background: rgba(8, 38, 65, 224); border: 1px solid #4f88b6; border-radius: 6px; padding: 7px 9px; selection-background-color: {ACCENT}; }}
         QLineEdit:focus, QDateEdit:focus, QComboBox:focus, QSpinBox:focus, QTextEdit:focus {{ border: 1px solid {ACCENT}; }}
+        QCheckBox, QRadioButton {{ spacing: 8px; }}
+        QCheckBox::indicator, QRadioButton::indicator {{ width: 15px; height: 15px; border: 1px solid #6fa8d6; background: rgba(8, 38, 65, 224); }}
+        QCheckBox::indicator {{ border-radius: 4px; }}
+        QRadioButton::indicator {{ border-radius: 8px; }}
+        QCheckBox::indicator:hover, QRadioButton::indicator:hover {{ border: 1px solid {ACCENT}; }}
+        QCheckBox::indicator:checked, QRadioButton::indicator:checked {{ background: {ACCENT}; border: 1px solid {ACCENT_HOVER}; }}
         QComboBox QAbstractItemView {{ background: #123e64; selection-background-color: #267fc8; }}
         #secondaryButton, #largeSecondary, #largePrimary {{ border-radius: 7px; padding: 9px 14px; min-height: 20px; font-weight: 700; }}
         #secondaryButton, #largeSecondary {{ background: rgba(12, 49, 81, 229); border: 1px solid #5798c9; }}

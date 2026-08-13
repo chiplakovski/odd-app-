@@ -13,18 +13,23 @@ MAX_HISTORY_ENTRIES = 200
 @dataclass
 class HistoryEntry:
     timestamp: str
-    source_name: str
-    source_path: str
-    project_name: str
-    project_number: str
-    ship_name: str
-    category_name: str
-    range_start: int
-    range_end: int
-    item_count: int
-    included_count: int
-    report_count: int
-    output_path: str
+    kind: str = "reports"  # "reports" (inspection reports) | "hotwork" (hot work permits)
+    source_name: str = ""
+    source_path: str = ""
+    project_name: str = ""
+    project_number: str = ""
+    ship_name: str = ""
+    category_name: str = ""
+    range_start: int = 0
+    range_end: int = 0
+    item_count: int = 0
+    included_count: int = 0
+    report_count: int = 0
+    output_path: str = ""
+    # hot work permit specifics
+    item_number: int | None = None
+    date_from: str = ""
+    date_to: str = ""
 
 
 def load_history() -> list[HistoryEntry]:
@@ -32,9 +37,15 @@ def load_history() -> list[HistoryEntry]:
         return []
     try:
         rows = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
-        return [HistoryEntry(**row) for row in rows]
     except Exception:
         return []
+    entries = []
+    for row in rows:
+        try:
+            entries.append(HistoryEntry(**row))
+        except Exception:
+            continue
+    return entries
 
 
 def save_history(entries: list[HistoryEntry]) -> None:

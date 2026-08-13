@@ -18,6 +18,7 @@ ASSET_DIR = RESOURCE_DIR / "assets"
 ICON_DIR = ASSET_DIR / "icons"
 TEMPLATE_DIR = RESOURCE_DIR / "templates"
 MASTER_TEMPLATE = TEMPLATE_DIR / "Inspection_Master_Template.docx"
+HOTWORK_TEMPLATE = TEMPLATE_DIR / "Hot_Work_Permit_Template.docx"
 
 USER_DATA_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "ODD Inspection Report Generator"
 CONFIG_FILE = USER_DATA_DIR / "settings.json"
