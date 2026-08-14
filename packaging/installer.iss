@@ -15,6 +15,11 @@ AppId={{268E2707-1979-4D2B-8509-208E42458019}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+; Installs for the current user only, so no admin/UAC elevation is required.
+; {autopf}/{autodesktop}/{group} below already resolve to the per-user
+; equivalents (LocalAppData\Programs, user Desktop, user Start Menu) when
+; PrivilegesRequired is "lowest".
+PrivilegesRequired=lowest
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
