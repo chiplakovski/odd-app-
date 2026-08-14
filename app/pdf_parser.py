@@ -38,6 +38,30 @@ def detect_project(text: str, source_path: Path) -> tuple[str, str]:
     return name.upper(), number
 
 
+_PERSONNEL_LABEL_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?"
+    r"(Superintendent|Chief\s+Officer|Ship\s*owner(?!\s*No\.?\b)|Owner|Company)"
+    r"\s*(?:[:\-]\s*|\s{2,})(.+?)\s*$"
+)
+
+
+def detect_personnel(text: str) -> dict[str, str]:
+    """Pull Superintendent / Chief Officer / company names from a work-list cover page.
+
+    Looks for "Label: Value" style lines (the format used on the work-list header/cover
+    page), e.g. "Superintendent: John Smith" or "Owner   Fiducia Rederei AB" (columnar
+    layout extraction can turn the separator into a run of spaces instead of a colon).
+    The first match for each label wins.
+    """
+    result: dict[str, str] = {}
+    for m in _PERSONNEL_LABEL_RE.finditer(text):
+        label = re.sub(r"\s+", " ", m.group(1)).strip().lower()
+        value = " ".join(m.group(2).split())
+        if value and label not in result:
+            result[label] = value
+    return result
+
+
 def _match_item_header(line: str) -> tuple[int, str, str] | None:
     clean = " ".join(line.strip().split())
     if not clean:

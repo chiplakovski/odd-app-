@@ -43,7 +43,7 @@ from ..history import HistoryEntry, add_history_entry, load_history
 from ..hotwork import HotWorkChecklist, item_settings_key, load_item_checklist, save_item_checklist
 from ..hotwork_export import generate_hotwork_permits
 from ..models import WorkItem
-from ..pdf_parser import detect_project, extract_pdf_text, parse_work_items
+from ..pdf_parser import detect_personnel, detect_project, extract_pdf_text, parse_work_items
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
@@ -509,6 +509,7 @@ class MainWindow(QMainWindow):
             self.project_name.setText(ship)
             self.ship_name.setText(ship)
             self.project_number.setText(project_number)
+            self._apply_detected_personnel(text)
             self._populate_tree()
             self._update_file_card()
             self._update_report_groups()
@@ -520,6 +521,19 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.status_message("Could not analyze the work list.", error=True)
             QMessageBox.critical(self, APP_TITLE, str(exc))
+
+    def _apply_detected_personnel(self, text: str) -> None:
+        """Pull the Superintendent / Chief Officer / company from the work list's cover page."""
+        personnel = detect_personnel(text)
+        names = [personnel[key] for key in ("superintendent", "chief officer") if personnel.get(key)]
+        if names:
+            self.info.inspector_names = "\n".join(names)
+            self.inspectors.setText("; ".join(names))
+        company = personnel.get("company") or personnel.get("owner") or personnel.get("shipowner")
+        if company:
+            self.info.inspection_company = company
+        if names or company:
+            save_settings(self.info)
 
     def _record_work_order_history(self, ship: str, project_number: str) -> None:
         add_history_entry(
