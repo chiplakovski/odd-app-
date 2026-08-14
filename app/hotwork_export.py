@@ -144,12 +144,12 @@ def _fill_permit_page(container, vessel: str, location: str, checklist: HotWorkC
         _set_textbox_text(alternate_content, value)
 
     checkboxes = _iter_checkbox_sdts(container)
-    states = checklist.checkbox_states()
-    if len(checkboxes) != len(states):
+    if len(checkboxes) != EXPECTED_CHECKBOX_COUNT:
         raise RuntimeError(
-            f"Unexpected hot work template structure: found {len(checkboxes)} checkboxes, expected {len(states)}."
+            f"Unexpected hot work template structure: found {len(checkboxes)} checkboxes, "
+            f"expected {EXPECTED_CHECKBOX_COUNT}."
         )
-    for checkbox_sdt, state in zip(checkboxes, states):
+    for checkbox_sdt, state in zip(checkboxes, checklist.checkbox_states()):
         _set_checkbox(checkbox_sdt, state)
 
 

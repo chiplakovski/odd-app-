@@ -27,42 +27,56 @@ def add_shadow(widget: QWidget, blur: int = 24, opacity: int = 110, y: int = 6) 
     widget.setGraphicsEffect(effect)
 
 
-class BackgroundWidget(QWidget):
+class _CoverImageWidget(QWidget):
+    """Paints an image scaled to cover the widget's full area. The scaled pixmap is cached
+    and only recomputed on resize, not on every paint (repaints are far more frequent than
+    resizes, and SmoothPixmapTransform scaling isn't cheap)."""
+
     def __init__(self, image_path: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._pixmap = QPixmap(image_path)
+        self._source = QPixmap(image_path)
+        self._scaled = QPixmap()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        self._rescale()
+        super().resizeEvent(event)
+
+    def _rescale(self) -> None:
+        if self._source.isNull() or self.size().isEmpty():
+            self._scaled = QPixmap()
+        else:
+            self._scaled = self._source.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+
+    def _paint_overlay(self, painter: QPainter) -> None:
+        """Hook for subclasses to paint on top of the cover image."""
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        if self._scaled.isNull() and not self._source.isNull():
+            self._rescale()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        if not self._scaled.isNull():
+            x = (self.width() - self._scaled.width()) // 2
+            y = (self.height() - self._scaled.height()) // 2
+            painter.drawPixmap(x, y, self._scaled)
+        self._paint_overlay(painter)
+        super().paintEvent(event)
+
+
+class BackgroundWidget(_CoverImageWidget):
+    """Full-window cover-fit background photo with a dark-blue grade for text readability."""
+
+    def __init__(self, image_path: str, parent: QWidget | None = None) -> None:
+        super().__init__(image_path, parent)
         self.setAttribute(Qt.WA_StyledBackground, True)
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        if not self._pixmap.isNull():
-            # Cover the complete application window while keeping the shipyard image proportions.
-            scaled = self._pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            x = (self.width() - scaled.width()) // 2
-            y = (self.height() - scaled.height()) // 2
-            painter.drawPixmap(x, y, scaled)
+    def _paint_overlay(self, painter: QPainter) -> None:
         # A restrained dark-blue grade keeps text readable without hiding the background.
         painter.fillRect(self.rect(), QColor(4, 19, 36, 46))
-        super().paintEvent(event)
 
 
-class BannerWidget(QWidget):
+class BannerWidget(_CoverImageWidget):
     """A cover-fit image strip, used for the full-width brand header banner."""
-
-    def __init__(self, image_path: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._pixmap = QPixmap(image_path)
-
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        if not self._pixmap.isNull():
-            scaled = self._pixmap.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            x = (self.width() - scaled.width()) // 2
-            y = (self.height() - scaled.height()) // 2
-            painter.drawPixmap(x, y, scaled)
-        super().paintEvent(event)
 
 
 class TitleBar(QFrame):

@@ -14,6 +14,33 @@ block_cipher = None
 REPO_ROOT = Path(SPECPATH).resolve().parent
 APP_NAME = "ODD Inspection Report Generator"
 
+# The app only uses QtCore/QtGui/QtWidgets (plus SVG icon rendering). This trims the Qt
+# submodules that are pure Python-level extras (QtTest, QtDesigner, QtHelp, ...). Most of
+# PySide6's bundle size is Qt's own binary-level dependencies between Core/Gui/Widgets and
+# things like Network/Qml/Pdf (pulled in by PyInstaller's Qt dependency walker regardless of
+# excludes, confirmed by testing), so don't expect this list to shrink the build dramatically
+# - it's a small, safe trim, not the fix for a slow first launch (that's almost always
+# Windows Defender/antivirus scanning the freshly-installed exe, which only happens once).
+UNUSED_QT_MODULES = [
+    "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQuickControls2",
+    "PySide6.QtQuickTest", "PySide6.QtQuick3D", "PySide6.QtQuick3DAssetImport",
+    "PySide6.QtQuick3DRuntimeRender", "PySide6.QtQuick3DUtils",
+    "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
+    "PySide6.QtWebChannel", "PySide6.QtWebSockets",
+    "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets",
+    "PySide6.QtNetwork", "PySide6.QtSql", "PySide6.QtXml",
+    "PySide6.QtPdf", "PySide6.QtPdfWidgets",
+    "PySide6.QtBluetooth", "PySide6.QtNfc", "PySide6.QtPositioning", "PySide6.QtLocation",
+    "PySide6.QtSensors", "PySide6.QtSerialPort",
+    "PySide6.QtCharts", "PySide6.QtDataVisualization", "PySide6.QtGraphs", "PySide6.QtGraphsWidgets",
+    "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.Qt3DInput", "PySide6.Qt3DLogic",
+    "PySide6.Qt3DAnimation", "PySide6.Qt3DExtras",
+    "PySide6.QtRemoteObjects", "PySide6.QtScxml", "PySide6.QtStateMachine",
+    "PySide6.QtSpatialAudio", "PySide6.QtTextToSpeech",
+    "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets", "PySide6.QtVirtualKeyboard",
+    "PySide6.QtTest", "PySide6.QtDesigner", "PySide6.QtHelp", "PySide6.QtUiTools",
+]
+
 a = Analysis(
     [str(REPO_ROOT / "launcher.py")],
     pathex=[str(REPO_ROOT)],
@@ -25,7 +52,7 @@ a = Analysis(
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
-    excludes=[],
+    excludes=UNUSED_QT_MODULES,
     noarchive=False,
 )
 

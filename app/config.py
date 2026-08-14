@@ -13,7 +13,6 @@ APP_VERSION = "1.0.0"
 
 SOURCE_DIR = Path(__file__).resolve().parent
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", SOURCE_DIR))
-APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else SOURCE_DIR
 ASSET_DIR = RESOURCE_DIR / "assets"
 ICON_DIR = ASSET_DIR / "icons"
 TEMPLATE_DIR = RESOURCE_DIR / "templates"

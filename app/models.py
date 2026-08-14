@@ -13,7 +13,3 @@ class WorkItem:
     summary: str = ""
     group: str = ""
     included: bool = True
-
-    @property
-    def number_text(self) -> str:
-        return str(self.number)
