@@ -38,27 +38,65 @@ def detect_project(text: str, source_path: Path) -> tuple[str, str]:
     return name.upper(), number
 
 
-_PERSONNEL_LABEL_RE = re.compile(
-    r"(?im)^\s*(?:[-*]\s*)?"
-    r"(Superintendent|Chief\s+Officer|Ship\s*owner(?!\s*No\.?\b)|Owner|Company)"
-    r"\s*(?:[:\-]\s*|\s{2,})(.+?)\s*$"
+_ROLE_LABEL_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    # Crew-list contact cards ("Technical Superintendent\nBjörn Åsander +46 ...", or
+    # "Technical Chief: Ulf Ekedahl"). Checked before the bare labels below so a
+    # compound title like "Superintendent Electronics" doesn't win the role first.
+    ("superintendent", re.compile(r"(?i)^\s*Technical\s+Superintendent\s*(?::\s*(.*))?\s*$")),
+    ("chief officer", re.compile(r"(?i)^\s*Technical\s+Chief\s*(?::\s*(.*))?\s*$")),
+    # Cover-page style ("Superintendent: John Smith" / "Chief Officer: Jane Doe").
+    # Anchored to the whole line (no trailing words without a colon) so this doesn't
+    # also match compound titles such as "Superintendent Electronics".
+    ("superintendent", re.compile(r"(?i)^\s*Superintendent\s*(?::\s*(.*))?\s*$")),
+    ("chief officer", re.compile(r"(?i)^\s*Chief\s+Officer\s*(?::\s*(.*))?\s*$")),
+]
+
+_COMPANY_LABEL_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?(?:Ship\s*owner(?!\s*No\.?\b)|Owner|Company)\s*[:\-]\s*(.+?)\s*$"
 )
 
 
-def detect_personnel(text: str) -> dict[str, str]:
-    """Pull Superintendent / Chief Officer / company names from a work-list cover page.
+def _strip_trailing_contact_info(value: str) -> str:
+    """Cut a "Name +46 70-123 45 67" style line down to just the name."""
+    value = re.sub(r"\s*\+?\d.*$", "", value)
+    return value.strip(" \t,-:")
 
-    Looks for "Label: Value" style lines (the format used on the work-list header/cover
-    page), e.g. "Superintendent: John Smith" or "Owner   Fiducia Rederei AB" (columnar
-    layout extraction can turn the separator into a run of spaces instead of a colon).
-    The first match for each label wins.
+
+def detect_personnel(text: str) -> dict[str, str]:
+    """Pull Superintendent / Chief Officer / company names from a work list.
+
+    Handles both layouts seen in real work lists:
+      - same line:  "Technical Chief: Ulf Ekedahl"
+      - next line:  "Technical Superintendent\nBjörn Åsander +46 76-610 80 12"
+    The first match for each role wins (a work list can list a backup/relief
+    officer under a second, later block, which is not what we want here).
     """
+    lines = text.splitlines()
     result: dict[str, str] = {}
-    for m in _PERSONNEL_LABEL_RE.finditer(text):
-        label = re.sub(r"\s+", " ", m.group(1)).strip().lower()
-        value = " ".join(m.group(2).split())
-        if value and label not in result:
-            result[label] = value
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if not line:
+            continue
+        for label, pattern in _ROLE_LABEL_PATTERNS:
+            if label in result:
+                continue
+            m = pattern.match(line)
+            if not m:
+                continue
+            value = _strip_trailing_contact_info(m.group(1) or "")
+            if not value:
+                for follow in lines[i + 1 : i + 4]:
+                    follow = follow.strip()
+                    if follow:
+                        value = _strip_trailing_contact_info(follow)
+                        break
+            if value:
+                result[label] = value
+        m = _COMPANY_LABEL_RE.match(line)
+        if m and "company" not in result:
+            value = " ".join(m.group(1).split())
+            if value:
+                result["company"] = value
     return result
 
 

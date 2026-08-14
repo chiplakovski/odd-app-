@@ -523,13 +523,13 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, APP_TITLE, str(exc))
 
     def _apply_detected_personnel(self, text: str) -> None:
-        """Pull the Superintendent / Chief Officer / company from the work list's cover page."""
+        """Pull the Superintendent / Chief Officer / company from the work list."""
         personnel = detect_personnel(text)
         names = [personnel[key] for key in ("superintendent", "chief officer") if personnel.get(key)]
         if names:
             self.info.inspector_names = "\n".join(names)
             self.inspectors.setText("; ".join(names))
-        company = personnel.get("company") or personnel.get("owner") or personnel.get("shipowner")
+        company = personnel.get("company")
         if company:
             self.info.inspection_company = company
         if names or company:
