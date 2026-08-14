@@ -221,6 +221,7 @@ class HistoryDialog(QDialog):
         self.setWindowTitle("Work List History")
         self.resize(1000, 560)
         self.entries = entries
+        self.load_requested_path: str | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
@@ -296,6 +297,25 @@ class HistoryDialog(QDialog):
         if not path or not Path(path).exists():
             QMessageBox.information(self, APP_TITLE, "The output file for this entry could not be found.")
             return
+        entry = self.entries[self.table.indexOfTopLevelItem(item)]
+        if entry.kind == "workorder":
+            box = QMessageBox(self)
+            box.setWindowTitle(APP_TITLE)
+            box.setText(
+                f'"{entry.source_name or Path(path).name}" is a work order\'s source PDF.\n\n'
+                "Load it back into the program, or just open the file?"
+            )
+            load_button = box.addButton("Load into Program", QMessageBox.ButtonRole.AcceptRole)
+            open_button = box.addButton("Open File", QMessageBox.ButtonRole.ActionRole)
+            box.addButton(QMessageBox.StandardButton.Cancel)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is load_button:
+                self.load_requested_path = path
+                self.accept()
+                return
+            if clicked is not open_button:
+                return
         open_with_system_default(path)
 
     def _clear_history(self) -> None:

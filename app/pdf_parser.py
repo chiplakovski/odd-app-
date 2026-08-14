@@ -55,11 +55,25 @@ _COMPANY_LABEL_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:Ship\s*owner(?!\s*No\.?\b)|Owner|Company)\s*[:\-]\s*(.+?)\s*$"
 )
 
+# The work-list cover section marks the operating company with its own "***Name***"
+# banner line right after "Daily meeting ...", e.g. "***ESL Shipping Ltd***". The same
+# banner style also appears earlier for the vessel's pennant number (e.g. "*****KBV
+# 032*****"), so only the first such banner *after* the daily-meeting line counts.
+_DAILY_MEETING_RE = re.compile(r"(?i)daily meeting")
+_ASTERISK_BANNER_RE = re.compile(r"^\*{2,}\s*(.+?)\s*\*{2,}$")
+
 
 def _strip_trailing_contact_info(value: str) -> str:
     """Cut a "Name +46 70-123 45 67" style line down to just the name."""
     value = re.sub(r"\s*\+?\d.*$", "", value)
     return value.strip(" \t,-:")
+
+
+def _looks_like_person_name(value: str) -> bool:
+    """Reject emails/phone numbers that can stand in for a role with no name given."""
+    if not value or "@" in value:
+        return False
+    return not re.fullmatch(r"[+\d][\d\s().-]*", value)
 
 
 def detect_personnel(text: str) -> dict[str, str]:
@@ -69,12 +83,14 @@ def detect_personnel(text: str) -> dict[str, str]:
       - same line:  "Technical Chief: Ulf Ekedahl"
       - next line:  "Technical Superintendent\nBjörn Åsander +46 76-610 80 12"
     The first match for each role wins (a work list can list a backup/relief
-    officer under a second, later block, which is not what we want here).
+    officer under a second, later block, which is not what we want here). Some
+    roles (e.g. a ship's rotating Chief Officer) list only a generic email/phone
+    with no name - those are left undetected rather than filled with the email.
     """
-    lines = text.splitlines()
+    lines = [raw.strip() for raw in text.splitlines()]
     result: dict[str, str] = {}
-    for i, raw in enumerate(lines):
-        line = raw.strip()
+
+    for i, line in enumerate(lines):
         if not line:
             continue
         for label, pattern in _ROLE_LABEL_PATTERNS:
@@ -84,19 +100,39 @@ def detect_personnel(text: str) -> dict[str, str]:
             if not m:
                 continue
             value = _strip_trailing_contact_info(m.group(1) or "")
+            if not _looks_like_person_name(value):
+                value = ""
             if not value:
                 for follow in lines[i + 1 : i + 4]:
-                    follow = follow.strip()
-                    if follow:
-                        value = _strip_trailing_contact_info(follow)
+                    if not follow:
+                        continue
+                    candidate = _strip_trailing_contact_info(follow)
+                    if _looks_like_person_name(candidate):
+                        value = candidate
                         break
             if value:
                 result[label] = value
-        m = _COMPANY_LABEL_RE.match(line)
-        if m and "company" not in result:
-            value = " ".join(m.group(1).split())
-            if value:
-                result["company"] = value
+
+    past_daily_meeting = False
+    for line in lines:
+        if not past_daily_meeting:
+            if _DAILY_MEETING_RE.search(line):
+                past_daily_meeting = True
+            continue
+        m = _ASTERISK_BANNER_RE.match(line)
+        if m:
+            result["company"] = m.group(1).strip()
+            break
+
+    if "company" not in result:
+        for line in lines:
+            m = _COMPANY_LABEL_RE.match(line)
+            if m:
+                value = " ".join(m.group(1).split())
+                if value:
+                    result["company"] = value
+                    break
+
     return result
 
 

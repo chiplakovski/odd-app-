@@ -771,15 +771,33 @@ class MainWindow(QMainWindow):
                 title = f"{entry.project_name or 'Report'} · {entry.report_count} report(s)"
                 subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp
                 row = ActivityRow("REPORT", ACCENT, title, subtitle)
-            output_path = entry.output_path
-            row.openRequested.connect(lambda p=output_path: self._open_history_output(p))
+            row.openRequested.connect(lambda e=entry: self._open_history_entry(e))
             self.activity_layout.addWidget(row)
         self.activity_layout.addStretch(1)
 
-    def _open_history_output(self, path: str) -> None:
+    def _open_history_entry(self, entry: HistoryEntry) -> None:
+        path = entry.output_path
         if not path or not Path(path).exists():
             QMessageBox.information(self, APP_TITLE, "That output file could not be found.")
             return
+        if entry.kind == "workorder":
+            box = QMessageBox(self)
+            box.setWindowTitle(APP_TITLE)
+            box.setText(
+                f'"{entry.source_name or Path(path).name}" is a work order\'s source PDF.\n\n'
+                "Load it back into the program, or just open the file?"
+            )
+            load_button = box.addButton("Load into Program", QMessageBox.ButtonRole.AcceptRole)
+            open_button = box.addButton("Open File", QMessageBox.ButtonRole.ActionRole)
+            box.addButton(QMessageBox.StandardButton.Cancel)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is load_button:
+                self.set_pdf_path(path)
+                self.analyze_work_list()
+                return
+            if clicked is not open_button:
+                return
         open_with_system_default(path)
 
     def open_hotwork_dialog(self) -> None:
@@ -848,7 +866,11 @@ class MainWindow(QMainWindow):
 
     def open_history(self) -> None:
         self.set_active_nav(HISTORY_NAV_INDEX)
-        HistoryDialog(load_history(), self).exec()
+        dialog = HistoryDialog(load_history(), self)
+        dialog.exec()
+        if dialog.load_requested_path:
+            self.set_pdf_path(dialog.load_requested_path)
+            self.analyze_work_list()
         self._update_recent_activity()
 
     def open_settings(self) -> None:
