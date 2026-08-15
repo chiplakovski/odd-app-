@@ -37,6 +37,34 @@ WORK_CATEGORY_PRESETS: list[tuple[str, int, int]] = [
     ("Custom", 7000, 7999),
 ]
 
+# Auto-managed output layout: <Desktop>/ODD work/<project number>/{WO<no>.pdf, HotW/, IRep/}
+WORK_ORDER_FOLDER = "ODD work"
+HOTWORK_SUBFOLDER = "HotW"
+INSPECTION_REPORT_SUBFOLDER = "IRep"
+
+
+def _desktop_dir() -> Path:
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+            ) as key:
+                value, _ = winreg.QueryValueEx(key, "Desktop")
+            return Path(os.path.expandvars(value))
+        except OSError:
+            pass
+    return Path.home() / "Desktop"
+
+
+def project_output_dir(project_number: str) -> Path:
+    """The auto-managed folder for one project: <Desktop>/ODD work/<project number>/."""
+    safe = (project_number or "Project").strip().replace(" ", "_") or "Project"
+    path = _desktop_dir() / WORK_ORDER_FOLDER / safe
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
 
 @dataclass
 class ProjectInfo:

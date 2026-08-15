@@ -1,6 +1,7 @@
 """The main application window."""
 from __future__ import annotations
 
+import shutil
 from datetime import date, datetime
 from pathlib import Path
 
@@ -32,9 +33,12 @@ from PySide6.QtWidgets import (
 from ..config import (
     APP_TITLE,
     APP_VERSION,
+    HOTWORK_SUBFOLDER,
+    INSPECTION_REPORT_SUBFOLDER,
     MASTER_TEMPLATE,
     ProjectInfo,
     load_settings,
+    project_output_dir,
     save_settings,
 )
 from ..docx_export import generate_docx
@@ -48,7 +52,7 @@ from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
 from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
-from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
+from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_glow
 
 MAX_ACTIVITY_ROWS = 6
 
@@ -142,7 +146,7 @@ class MainWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("glassPanel")
         frame.setFixedWidth(224)
-        add_shadow(frame)
+        add_glow(frame)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(12, 14, 12, 14)
         layout.setSpacing(9)
@@ -193,7 +197,7 @@ class MainWindow(QMainWindow):
     def _build_center_panel(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("glassPanel")
-        add_shadow(panel)
+        add_glow(panel)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(10)
@@ -336,7 +340,7 @@ class MainWindow(QMainWindow):
         panel = QFrame()
         panel.setObjectName("glassPanel")
         panel.setFixedWidth(410)
-        add_shadow(panel)
+        add_glow(panel)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(10)
@@ -515,6 +519,7 @@ class MainWindow(QMainWindow):
             self.ship_name.setText(ship)
             self.project_number.setText(project_number)
             self._apply_detected_personnel(text)
+            self.source_path = self._save_work_order_copy(project_number)
             self._populate_tree()
             self._update_file_card()
             self._update_report_groups()
@@ -526,6 +531,22 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self.status_message("Could not analyze the work list.", error=True)
             QMessageBox.critical(self, APP_TITLE, str(exc))
+
+    def _save_work_order_copy(self, project_number: str) -> Path:
+        """Copy the source PDF into <Desktop>/ODD work/<project>/WO<project>.pdf.
+
+        Returns that stable path (or the original source path if the copy fails), so
+        later re-loads via History always find the same file even if the originally
+        picked PDF gets moved or deleted.
+        """
+        dest = project_output_dir(project_number) / f"WO{project_number or 'Project'}.pdf"
+        if self.source_path.resolve() == dest.resolve():
+            return self.source_path
+        try:
+            shutil.copy2(self.source_path, dest)
+        except OSError:
+            return self.source_path
+        return dest
 
     def _apply_detected_personnel(self, text: str) -> None:
         """Pull the Superintendent / Chief Officer / company from the work list."""
@@ -823,11 +844,7 @@ class MainWindow(QMainWindow):
         start_date, end_date = dialog.date_range()
         checklist = dialog.build_checklist()
 
-        default_dir = str(self.last_output.parent if self.last_output else (self.source_path.parent if self.source_path else Path.home()))
-        out_dir = QFileDialog.getExistingDirectory(self, "Select a folder for the hot work permit files", default_dir)
-        if not out_dir:
-            return
-        out_dir_path = Path(out_dir)
+        out_dir_path = project_output_dir(project_number) / HOTWORK_SUBFOLDER
 
         generated = 0
         errors: list[str] = []
@@ -913,13 +930,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, APP_TITLE, "Project name and project number are required.")
             return
         default_name = f"{info.project_number}_{info.project_name}_{self.category_name}_Inspection_and_Test_Reports.docx".replace(" ", "_")
-        start_dir = str(self.source_path.parent if self.source_path else Path.home())
-        output, _ = QFileDialog.getSaveFileName(self, "Save inspection reports", str(Path(start_dir) / default_name), "Word document (*.docx)")
-        if not output:
-            return
+        output = project_output_dir(info.project_number) / INSPECTION_REPORT_SUBFOLDER / default_name
         try:
-            count = generate_docx(self.items, info, Path(output), MASTER_TEMPLATE)
-            self.last_output = Path(output)
+            count = generate_docx(self.items, info, output, MASTER_TEMPLATE)
+            self.last_output = output
             self.output_folder_label.setText(f"Output Folder: {self.last_output.parent}")
             save_settings(info)
             self._record_history(info, count)
@@ -927,7 +941,7 @@ class MainWindow(QMainWindow):
             self.status_message(f"Created {count} inspection report page(s).")
             self.report_count_label.setText(f"{count} reports ready")
             QMessageBox.information(self, APP_TITLE, f"Created {count} inspection report page(s):\n\n{output}")
-            open_with_system_default(output)
+            open_with_system_default(str(output))
         except Exception as exc:
             self.status_message("Could not generate the reports.", error=True)
             QMessageBox.critical(self, APP_TITLE, str(exc))

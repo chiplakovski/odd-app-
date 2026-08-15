@@ -186,8 +186,12 @@ def _fill_permit_page(
         location,
         checklist.dock_quay,
         day.strftime("%Y,%m,%d"),
-        checklist.start_time,
+        # The template's "Start Time ... Stop Time:" label line has the Stop Time box
+        # positioned before the Start Time box in document order (confirmed against both
+        # the DrawingML and VML shape offsets), so these two are intentionally swapped
+        # relative to the label reading order.
         checklist.stop_time,
+        checklist.start_time,
         checklist.fire_watch_motivation,
     ]
     for alternate_content, value in zip(textboxes, values):
