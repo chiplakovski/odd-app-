@@ -1,9 +1,9 @@
 """Colour palette and application-wide stylesheet for the dark-glass UI."""
 from __future__ import annotations
 
-# Glass panels are approximately 40% transparent (60% opaque), with a deep blue tone.
-PANEL = "rgba(7, 31, 55, 154)"
-PANEL_2 = "rgba(10, 42, 71, 165)"
+# Glass panels are approximately 50% transparent (50% opaque), with a deep blue tone.
+PANEL = "rgba(7, 31, 55, 128)"
+PANEL_2 = "rgba(10, 42, 71, 138)"
 BORDER = "#397db2"
 ACCENT = "#2f91ee"
 ACCENT_HOVER = "#5eb3ff"
