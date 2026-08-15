@@ -836,7 +836,10 @@ class MainWindow(QMainWindow):
             file_name = f"{safe_project}_HotWork_{item.number}_{start_date.isoformat()}_to_{end_date.isoformat()}.docx"
             output_path = out_dir_path / file_name
             try:
-                page_count = generate_hotwork_permits(item, vessel, checklist, start_date, end_date, output_path)
+                page_count = generate_hotwork_permits(
+                    item, vessel, checklist, start_date, end_date, output_path,
+                    issuer_name=self.info.supervisor_name, issuer_company=self.info.supervisor_company,
+                )
             except Exception as exc:
                 errors.append(f"Item {item.number}: {exc}")
                 continue

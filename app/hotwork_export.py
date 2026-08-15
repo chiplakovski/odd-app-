@@ -93,6 +93,54 @@ def _set_textbox_text(alternate_content, text: str) -> None:
         first_p.append(new_run)
 
 
+def _set_table_cell_text(tc, text: str) -> None:
+    """Replace a plain table cell's visible text, preserving the first run's formatting."""
+    first_p = tc.find(qn("w:p"))
+    if first_p is None:
+        return
+    for extra_p in tc.findall(qn("w:p"))[1:]:
+        tc.remove(extra_p)
+    template_rpr = None
+    first_run = first_p.find(qn("w:r"))
+    if first_run is not None:
+        rpr = first_run.find(qn("w:rPr"))
+        if rpr is not None:
+            template_rpr = deepcopy(rpr)
+    for run in first_p.findall(qn("w:r")):
+        first_p.remove(run)
+    new_run = OxmlElement("w:r")
+    if template_rpr is not None:
+        new_run.append(template_rpr)
+    new_t = OxmlElement("w:t")
+    new_t.set(qn("xml:space"), "preserve")
+    new_t.text = text
+    new_run.append(new_t)
+    first_p.append(new_run)
+
+
+def _fill_issuer_signature(container, issuer_name: str, issuer_company: str) -> None:
+    """Fill the Permit Issuer's Name/Company on the "Work Start" signature row.
+
+    The template ships with a stale example filled in there (only a surname, no
+    company driven by settings), which isn't one of the floating textbox fields
+    _fill_permit_page already handles - it's a plain table cell.
+    """
+    if not issuer_name and not issuer_company:
+        return
+    for tr in container.iter(qn("w:tr")):
+        cells = tr.findall(qn("w:tc"))
+        if len(cells) < 3:
+            continue
+        role_text = "".join(t.text or "" for t in cells[0].iter(qn("w:t")))
+        if "Permit Issuer" not in role_text or "Work Start" not in role_text:
+            continue
+        if issuer_name:
+            _set_table_cell_text(cells[1], issuer_name)
+        if issuer_company:
+            _set_table_cell_text(cells[2], issuer_company)
+        return
+
+
 def _set_checkbox(sdt, checked: bool) -> None:
     sdt_pr = sdt.find(qn("w:sdtPr"))
     checkbox = sdt_pr.find(qn("w14:checkbox"))
@@ -124,7 +172,9 @@ def _page_break_paragraph() -> OxmlElement:
     return page_p
 
 
-def _fill_permit_page(container, vessel: str, location: str, checklist: HotWorkChecklist, day: date) -> None:
+def _fill_permit_page(
+    container, vessel: str, location: str, checklist: HotWorkChecklist, day: date, issuer_name: str, issuer_company: str
+) -> None:
     textboxes = _iter_textbox_alternates(container)
     if len(textboxes) != EXPECTED_TEXTBOX_COUNT:
         raise RuntimeError(
@@ -152,6 +202,8 @@ def _fill_permit_page(container, vessel: str, location: str, checklist: HotWorkC
     for checkbox_sdt, state in zip(checkboxes, checklist.checkbox_states()):
         _set_checkbox(checkbox_sdt, state)
 
+    _fill_issuer_signature(container, issuer_name, issuer_company)
+
 
 def generate_hotwork_permits(
     item: WorkItem,
@@ -160,6 +212,8 @@ def generate_hotwork_permits(
     start_date: date,
     end_date: date,
     output_path: Path,
+    issuer_name: str = "",
+    issuer_company: str = "",
     template_path: Path = HOTWORK_TEMPLATE,
 ) -> int:
     """Write one .docx with one permit page per calendar day in [start_date, end_date]."""
@@ -184,7 +238,7 @@ def generate_hotwork_permits(
     insert_index = len(body) - 1  # keep the trailing sectPr last
     for index, day in enumerate(days):
         page = deepcopy(pristine)
-        _fill_permit_page(page, vessel, location, checklist, day)
+        _fill_permit_page(page, vessel, location, checklist, day, issuer_name, issuer_company)
         if index > 0:
             body.insert(insert_index, _page_break_paragraph())
             insert_index += 1

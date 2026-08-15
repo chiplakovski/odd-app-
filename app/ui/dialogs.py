@@ -402,12 +402,22 @@ class HotWorkDialog(QDialog):
         logistics_row.addWidget(self._labeled(self.dock_quay, "Dock / Quay"), 1)
         form.addLayout(logistics_row)
 
-        time_row = QHBoxLayout()
-        self.start_time = QLineEdit(initial.start_time)
-        self.stop_time = QLineEdit(initial.stop_time)
-        time_row.addWidget(self._labeled(self.start_time, "Start Time (HH:MM)"), 1)
-        time_row.addWidget(self._labeled(self.stop_time, "Stop Time (HH:MM)"), 1)
-        form.addLayout(time_row)
+        form.addWidget(self._section_label("Shift"))
+        shift_row = QHBoxLayout()
+        self.shift_group = QButtonGroup(self)
+        self.day_shift = QRadioButton("Day shift (07:00 – 19:00)")
+        self.night_shift = QRadioButton("Night shift (19:00 – 07:00)")
+        self.shift_group.addButton(self.day_shift)
+        self.shift_group.addButton(self.night_shift)
+        # A saved item defaults to day shift unless it was explicitly saved as night shift.
+        if (initial.start_time, initial.stop_time) == ("19:00", "07:00"):
+            self.night_shift.setChecked(True)
+        else:
+            self.day_shift.setChecked(True)
+        shift_row.addWidget(self.day_shift)
+        shift_row.addWidget(self.night_shift)
+        shift_row.addStretch(1)
+        form.addLayout(shift_row)
 
         # --- Work method ---
         form.addWidget(self._section_label("Work method"))
@@ -531,14 +541,21 @@ class HotWorkDialog(QDialog):
         form.addWidget(box)
         return box
 
-    @staticmethod
-    def _yes_no_row(form: QVBoxLayout, label_text: str, yes_checked: bool) -> tuple[QRadioButton, QRadioButton]:
+    def _yes_no_row(self, form: QVBoxLayout, label_text: str, yes_checked: bool) -> tuple[QRadioButton, QRadioButton]:
         row = QHBoxLayout()
         label = QLabel(label_text)
         label.setWordWrap(True)
         row.addWidget(label, 1)
         yes = QRadioButton("Yes")
         no = QRadioButton("No")
+        # Each Yes/No pair needs its own group - QRadioButton siblings under the same
+        # parent widget are mutually exclusive by default, so without this, checking
+        # "Yes" on one question (e.g. MME fire hazard) was un-checking "Yes" on an
+        # unrelated question (e.g. the Fire-Watch arranged) sharing this dialog's content
+        # widget as their common parent.
+        group = QButtonGroup(self)
+        group.addButton(yes)
+        group.addButton(no)
         yes.setChecked(yes_checked)
         no.setChecked(not yes_checked)
         row.addWidget(yes)
@@ -577,16 +594,12 @@ class HotWorkDialog(QDialog):
             fire_alarm_disconnected="yes" if self.alarm_yes.isChecked() else "no" if self.alarm_no.isChecked() else "na",
             location=self.location.text().strip(),
             dock_quay=self.dock_quay.text().strip(),
-            start_time=self.start_time.text().strip(),
-            stop_time=self.stop_time.text().strip(),
+            start_time="19:00" if self.night_shift.isChecked() else "07:00",
+            stop_time="07:00" if self.night_shift.isChecked() else "19:00",
         )
 
     def validate_and_accept(self) -> None:
         if not self.items:
             QMessageBox.warning(self, APP_TITLE, "Select one or more work items first.")
-            return
-        start, end = self.date_range()
-        if not self.start_time.text().strip() or not self.stop_time.text().strip():
-            QMessageBox.warning(self, APP_TITLE, "Enter both a start time and a stop time.")
             return
         self.accept()

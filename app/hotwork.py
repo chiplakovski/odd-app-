@@ -51,8 +51,8 @@ class HotWorkChecklist:
     # Logistics
     location: str = ""  # blank = derive automatically from the work item
     dock_quay: str = "Drydock"
-    start_time: str = "08:00"
-    stop_time: str = "17:00"
+    start_time: str = "07:00"  # day shift (07:00-19:00) by default; night shift is 19:00-07:00
+    stop_time: str = "19:00"
 
     def checkbox_states(self) -> list[bool]:
         """The 28 checkbox states in the exact document order they appear in the template."""
