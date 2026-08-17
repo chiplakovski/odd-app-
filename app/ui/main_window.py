@@ -52,7 +52,7 @@ from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
 from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
-from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_glow
+from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
 
 MAX_ACTIVITY_ROWS = 6
 
@@ -146,7 +146,7 @@ class MainWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("glassPanel")
         frame.setFixedWidth(224)
-        add_glow(frame)
+        add_shadow(frame)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(12, 14, 12, 14)
         layout.setSpacing(9)
@@ -197,7 +197,7 @@ class MainWindow(QMainWindow):
     def _build_center_panel(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("glassPanel")
-        add_glow(panel)
+        add_shadow(panel)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(10)
@@ -340,7 +340,7 @@ class MainWindow(QMainWindow):
         panel = QFrame()
         panel.setObjectName("glassPanel")
         panel.setFixedWidth(410)
-        add_glow(panel)
+        add_shadow(panel)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(10)

@@ -5,7 +5,6 @@ from __future__ import annotations
 PANEL = "rgba(7, 31, 55, 102)"
 PANEL_2 = "rgba(10, 42, 71, 112)"
 BORDER = "#397db2"
-NEON = "#3ce8ff"
 ACCENT = "#2f91ee"
 ACCENT_HOVER = "#5eb3ff"
 TEXT = "#f4f8fd"
@@ -25,7 +24,7 @@ def build_stylesheet() -> str:
         #windowControl:hover {{ background: rgba(37, 87, 129, 210); }}
         #brandHeader {{ background: rgba(4, 20, 38, 76); border-bottom: 1px solid rgba(67, 128, 177, 130); }}
         #creditLabel {{ font-size: 9px; color: white; background: transparent; padding: 0 16px 9px 0; }}
-        #glassPanel {{ background-color: {PANEL}; border: 2px solid {NEON}; border-radius: 13px; }}
+        #glassPanel {{ background-color: {PANEL}; border: 1px solid {BORDER}; border-radius: 13px; }}
         #statusCard, #fileCard, #previewHeader {{ background-color: {PANEL_2}; border: 1px solid {BORDER}; border-radius: 10px; }}
         #sectionTitle {{ font-size: 20px; font-weight: 700; }}
         #navButton, #navActive {{ text-align: left; padding: 0 14px; border-radius: 9px; border: 1px solid {BORDER}; background: rgba(10, 42, 71, 207); }}

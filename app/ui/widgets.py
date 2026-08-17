@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from .assets import asset, icon
-from .theme import DANGER, NEON, SUCCESS
+from .theme import DANGER, SUCCESS
 
 
 def add_shadow(widget: QWidget, blur: int = 24, opacity: int = 110, y: int = 6) -> None:
@@ -24,18 +24,6 @@ def add_shadow(widget: QWidget, blur: int = 24, opacity: int = 110, y: int = 6) 
     effect.setBlurRadius(blur)
     effect.setOffset(0, y)
     effect.setColor(QColor(0, 0, 0, opacity))
-    widget.setGraphicsEffect(effect)
-
-
-def add_glow(widget: QWidget, color: str = NEON, blur: int = 36, opacity: int = 190) -> None:
-    """A soft, evenly-spread colored glow around a widget's edges (0 offset), for the
-    neon-outline panels - as opposed to add_shadow's dark, offset elevation shadow."""
-    effect = QGraphicsDropShadowEffect(widget)
-    effect.setBlurRadius(blur)
-    effect.setOffset(0, 0)
-    glow_color = QColor(color)
-    glow_color.setAlpha(opacity)
-    effect.setColor(glow_color)
     widget.setGraphicsEffect(effect)
 
 
