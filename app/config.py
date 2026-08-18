@@ -73,6 +73,7 @@ class ProjectInfo:
     only_finished: bool = False
     inspection_method: str = "Visual inspection"
     completion_result: str = "Automatic (from work list)"
+    start_at_login: bool = False
 
 
 def load_settings() -> ProjectInfo:
