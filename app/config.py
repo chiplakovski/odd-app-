@@ -37,31 +37,21 @@ WORK_CATEGORY_PRESETS: list[tuple[str, int, int]] = [
     ("Custom", 7000, 7999),
 ]
 
-# Auto-managed output layout: <Desktop>/ODD work/<project number>/{WO<no>.pdf, HotW/, IRep/}
+# Auto-managed output layout: <app data>/ODD work/<project number>/{WO<no>.pdf, HotW/, IRep/}
 WORK_ORDER_FOLDER = "ODD work"
 HOTWORK_SUBFOLDER = "HotW"
 INSPECTION_REPORT_SUBFOLDER = "IRep"
 
 
-def _desktop_dir() -> Path:
-    if sys.platform == "win32":
-        try:
-            import winreg
-
-            with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
-            ) as key:
-                value, _ = winreg.QueryValueEx(key, "Desktop")
-            return Path(os.path.expandvars(value))
-        except OSError:
-            pass
-    return Path.home() / "Desktop"
-
-
 def project_output_dir(project_number: str) -> Path:
-    """The auto-managed folder for one project: <Desktop>/ODD work/<project number>/."""
+    """The auto-managed folder for one project's files: <app data>/ODD work/<project number>/.
+
+    Lives alongside the app's own settings (USER_DATA_DIR), not the Desktop, so generated
+    files aren't scattered somewhere a user could casually move or delete them outside the
+    app - reach them through the app itself (History, Open Output Folder).
+    """
     safe = (project_number or "Project").strip().replace(" ", "_") or "Project"
-    path = _desktop_dir() / WORK_ORDER_FOLDER / safe
+    path = USER_DATA_DIR / WORK_ORDER_FOLDER / safe
     path.mkdir(parents=True, exist_ok=True)
     return path
 

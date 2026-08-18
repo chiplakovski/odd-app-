@@ -842,44 +842,50 @@ class MainWindow(QMainWindow):
             return
 
         start_date, end_date = dialog.date_range()
-        checklist = dialog.build_checklist()
+        shifts = dialog.selected_shifts()
+        multi_shift = len(shifts) > 1
 
         out_dir_path = project_output_dir(project_number) / HOTWORK_SUBFOLDER
 
         generated = 0
         errors: list[str] = []
+        checklist = None
         for item in selected:
             safe_project = (project_number or "Project").replace(" ", "_")
-            file_name = f"{safe_project}_HotWork_{item.number}_{start_date.isoformat()}_to_{end_date.isoformat()}.docx"
-            output_path = out_dir_path / file_name
-            try:
-                page_count = generate_hotwork_permits(
-                    item, vessel, checklist, start_date, end_date, output_path,
-                    issuer_name=self.info.supervisor_name, issuer_company=self.info.supervisor_company,
+            for shift_label, start_time, stop_time in shifts:
+                checklist = dialog.build_checklist(start_time, stop_time)
+                suffix = f"_{shift_label}" if multi_shift else ""
+                file_name = f"{safe_project}_HotWork_{item.number}{suffix}_{start_date.isoformat()}_to_{end_date.isoformat()}.docx"
+                output_path = out_dir_path / file_name
+                try:
+                    page_count = generate_hotwork_permits(
+                        item, vessel, checklist, start_date, end_date, output_path,
+                        issuer_name=self.info.supervisor_name, issuer_company=self.info.supervisor_company,
+                    )
+                except Exception as exc:
+                    errors.append(f"Item {item.number} ({shift_label}): {exc}")
+                    continue
+                add_history_entry(
+                    HistoryEntry(
+                        timestamp=datetime.now().isoformat(timespec="seconds"),
+                        kind="hotwork",
+                        source_name=self.source_path.name if self.source_path else "",
+                        source_path=str(self.source_path) if self.source_path else "",
+                        project_name=self.project_name.text().strip(),
+                        project_number=project_number,
+                        ship_name=vessel,
+                        item_count=1,
+                        included_count=1,
+                        report_count=page_count,
+                        output_path=str(output_path),
+                        item_number=item.number,
+                        date_from=start_date.isoformat(),
+                        date_to=end_date.isoformat(),
+                    )
                 )
-            except Exception as exc:
-                errors.append(f"Item {item.number}: {exc}")
-                continue
-            save_item_checklist(item_settings_key(project_number, item.number), checklist)
-            add_history_entry(
-                HistoryEntry(
-                    timestamp=datetime.now().isoformat(timespec="seconds"),
-                    kind="hotwork",
-                    source_name=self.source_path.name if self.source_path else "",
-                    source_path=str(self.source_path) if self.source_path else "",
-                    project_name=self.project_name.text().strip(),
-                    project_number=project_number,
-                    ship_name=vessel,
-                    item_count=1,
-                    included_count=1,
-                    report_count=page_count,
-                    output_path=str(output_path),
-                    item_number=item.number,
-                    date_from=start_date.isoformat(),
-                    date_to=end_date.isoformat(),
-                )
-            )
-            generated += 1
+                generated += 1
+            if checklist is not None:
+                save_item_checklist(item_settings_key(project_number, item.number), checklist)
 
         if errors:
             QMessageBox.warning(self, APP_TITLE, "Some permits could not be generated:\n\n" + "\n".join(errors))

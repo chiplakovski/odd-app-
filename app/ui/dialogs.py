@@ -402,13 +402,10 @@ class HotWorkDialog(QDialog):
         logistics_row.addWidget(self._labeled(self.dock_quay, "Dock / Quay"), 1)
         form.addLayout(logistics_row)
 
-        form.addWidget(self._section_label("Shift"))
+        form.addWidget(self._section_label("Shift (select both to get a separate permit file for each)"))
         shift_row = QHBoxLayout()
-        self.shift_group = QButtonGroup(self)
-        self.day_shift = QRadioButton("Day shift (07:00 – 19:00)")
-        self.night_shift = QRadioButton("Night shift (19:00 – 07:00)")
-        self.shift_group.addButton(self.day_shift)
-        self.shift_group.addButton(self.night_shift)
+        self.day_shift = QCheckBox("Day shift (07:00 – 19:00)")
+        self.night_shift = QCheckBox("Night shift (19:00 – 07:00)")
         # A saved item defaults to day shift unless it was explicitly saved as night shift.
         if (initial.start_time, initial.stop_time) == ("19:00", "07:00"):
             self.night_shift.setChecked(True)
@@ -566,7 +563,16 @@ class HotWorkDialog(QDialog):
     def date_range(self) -> tuple[date, date]:
         return self.date_from.date().toPython(), self.date_to.date().toPython()
 
-    def build_checklist(self) -> HotWorkChecklist:
+    def selected_shifts(self) -> list[tuple[str, str, str]]:
+        """(label, start_time, stop_time) for each checked shift, Day first."""
+        shifts = []
+        if self.day_shift.isChecked():
+            shifts.append(("Day", "07:00", "19:00"))
+        if self.night_shift.isChecked():
+            shifts.append(("Night", "19:00", "07:00"))
+        return shifts
+
+    def build_checklist(self, start_time: str, stop_time: str) -> HotWorkChecklist:
         return HotWorkChecklist(
             welding=self.welding.isChecked(),
             grinding=self.grinding.isChecked(),
@@ -594,12 +600,15 @@ class HotWorkDialog(QDialog):
             fire_alarm_disconnected="yes" if self.alarm_yes.isChecked() else "no" if self.alarm_no.isChecked() else "na",
             location=self.location.text().strip(),
             dock_quay=self.dock_quay.text().strip(),
-            start_time="19:00" if self.night_shift.isChecked() else "07:00",
-            stop_time="07:00" if self.night_shift.isChecked() else "19:00",
+            start_time=start_time,
+            stop_time=stop_time,
         )
 
     def validate_and_accept(self) -> None:
         if not self.items:
             QMessageBox.warning(self, APP_TITLE, "Select one or more work items first.")
+            return
+        if not self.selected_shifts():
+            QMessageBox.warning(self, APP_TITLE, "Select at least one shift.")
             return
         self.accept()

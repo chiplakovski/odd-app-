@@ -7,7 +7,6 @@ from dataclasses import asdict, dataclass
 from .config import USER_DATA_DIR
 
 HISTORY_FILE = USER_DATA_DIR / "work_list_history.json"
-MAX_HISTORY_ENTRIES = 200
 
 
 @dataclass
@@ -56,7 +55,7 @@ def save_history(entries: list[HistoryEntry]) -> None:
 
 
 def add_history_entry(entry: HistoryEntry) -> list[HistoryEntry]:
-    entries = [entry, *load_history()][:MAX_HISTORY_ENTRIES]
+    entries = [entry, *load_history()]
     save_history(entries)
     return entries
 

@@ -33,6 +33,18 @@ EXPECTED_CHECKBOX_COUNT = 28
 
 
 def default_location(item: WorkItem) -> str:
+    """A short description of this specific litra, for the permit's Location field.
+
+    Falls back to the group/category name only when the item has no description of
+    its own to draw from - a generic group label like "Steel 3600 Series" isn't useful
+    once it stops being a fallback.
+    """
+    text = (item.summary or item.description or "").strip()
+    first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    if first_line:
+        if len(first_line) > 70:
+            first_line = first_line[:67].rsplit(" ", 1)[0] + "..."
+        return first_line
     return display_group_name(item.group) if item.group else f"Item {item.number}"
 
 
@@ -94,12 +106,24 @@ def _set_textbox_text(alternate_content, text: str) -> None:
 
 
 def _set_table_cell_text(tc, text: str) -> None:
-    """Replace a plain table cell's visible text, preserving the first run's formatting."""
-    first_p = tc.find(qn("w:p"))
-    if first_p is None:
+    """Replace a table cell's visible text, preserving the first run's formatting.
+
+    Searches for paragraphs at any nesting depth (not just direct children), and clears
+    any auto-numbering (w:numPr) on the target paragraph - the template's Name/Signature
+    cell uses an upper-letter list style ("A.", "B.", ...) that would otherwise still
+    prefix the text with a letter even after the run text itself is replaced.
+    """
+    paragraphs = list(tc.iter(qn("w:p")))
+    if not paragraphs:
         return
-    for extra_p in tc.findall(qn("w:p"))[1:]:
-        tc.remove(extra_p)
+    first_p = paragraphs[0]
+    for extra_p in paragraphs[1:]:
+        extra_p.getparent().remove(extra_p)
+    p_pr = first_p.find(qn("w:pPr"))
+    if p_pr is not None:
+        num_pr = p_pr.find(qn("w:numPr"))
+        if num_pr is not None:
+            p_pr.remove(num_pr)
     template_rpr = None
     first_run = first_p.find(qn("w:r"))
     if first_run is not None:
