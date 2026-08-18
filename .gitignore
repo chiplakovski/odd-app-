@@ -5,5 +5,4 @@ __pycache__/
 build/
 dist/
 packaging/Output/
-packaging/vendor/
 .DS_Store

@@ -42,9 +42,9 @@ WORK_ORDER_FOLDER = "ODD work"
 HOTWORK_SUBFOLDER = "HotW"
 INSPECTION_REPORT_SUBFOLDER = "IRep"
 
-# Where the "oddprint" virtual printer (see packaging/) drops PDFs for pickup. The app
-# watches this folder and auto-imports anything that lands here, same as loading a work
-# list PDF by hand.
+# Drop a PDF here (e.g. via Windows' built-in "Microsoft Print to PDF") and the app
+# auto-imports it, same as loading a work list PDF by hand. No admin rights or driver
+# install needed - see MainWindow.open_print_inbox_folder / print_watch.py.
 PRINT_INBOX_DIR = USER_DATA_DIR / "PrintInbox"
 
 

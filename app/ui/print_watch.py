@@ -1,8 +1,8 @@
-"""Watches the "oddprint" inbox folder and reports PDFs once they're fully written.
+"""Watches the Print Inbox folder and reports PDFs once they're fully written.
 
-The oddprint virtual printer (see packaging/) drops one PDF per print job into
-config.PRINT_INBOX_DIR with no further signal that the write is complete, so this polls
-each newly-seen file's size until it stops changing before reporting it as ready.
+Whatever drops a PDF into config.PRINT_INBOX_DIR (e.g. "Microsoft Print to PDF" saving
+there, or a file copied in by hand) gives no signal that the write is complete, so this
+polls each newly-seen file's size until it stops changing before reporting it as ready.
 """
 from __future__ import annotations
 

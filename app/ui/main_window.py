@@ -36,6 +36,7 @@ from ..config import (
     HOTWORK_SUBFOLDER,
     INSPECTION_REPORT_SUBFOLDER,
     MASTER_TEMPLATE,
+    PRINT_INBOX_DIR,
     ProjectInfo,
     load_settings,
     project_output_dir,
@@ -105,7 +106,7 @@ class MainWindow(QMainWindow):
         self._print_watcher.scan_existing()
 
     def _on_print_job_ready(self, path: str) -> None:
-        """A PDF landed in the oddprint inbox (see print_watch.py) - load it like any
+        """A PDF landed in the Print Inbox folder (see print_watch.py) - load it like any
         other work list. Only remove the inbox copy on success, once
         analyze_work_list() has saved its own stable copy under the managed project
         folder - if it failed (e.g. a non-work-list PDF got printed by mistake), leave
@@ -266,6 +267,21 @@ class MainWindow(QMainWindow):
         file_layout.addWidget(replace)
         upload_row.addWidget(self.file_card, 2)
         layout.addLayout(upload_row)
+
+        print_inbox_row = QHBoxLayout()
+        print_inbox_row.setSpacing(8)
+        print_inbox_tip = QLabel(
+            'Tip: print anything to "Microsoft Print to PDF" (built into Windows, no install needed), '
+            "save it into the Print Inbox folder, and it loads here automatically."
+        )
+        print_inbox_tip.setObjectName("mutedLabel")
+        print_inbox_tip.setWordWrap(True)
+        print_inbox_row.addWidget(print_inbox_tip, 1)
+        open_print_inbox_button = QPushButton("Open Print Inbox Folder")
+        open_print_inbox_button.setObjectName("secondaryButton")
+        open_print_inbox_button.clicked.connect(self.open_print_inbox_folder)
+        print_inbox_row.addWidget(open_print_inbox_button)
+        layout.addLayout(print_inbox_row)
 
         fields = QFrame()
         fields.setObjectName("fieldsFrame")
@@ -999,6 +1015,11 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, APP_TITLE, str(target))
         else:
             QMessageBox.information(self, APP_TITLE, "Generate a report first, or load a work list.")
+
+    def open_print_inbox_folder(self) -> None:
+        PRINT_INBOX_DIR.mkdir(parents=True, exist_ok=True)
+        if not open_with_system_default(str(PRINT_INBOX_DIR)):
+            QMessageBox.information(self, APP_TITLE, str(PRINT_INBOX_DIR))
 
     def status_message(self, text: str, error: bool = False) -> None:
         self.footer_status.setText("●  " + text)

@@ -19,20 +19,6 @@ if errorlevel 1 goto failed
 echo.
 echo App build complete: dist\ODD Inspection Report Generator\
 
-if not exist "packaging\vendor\clawPDF_setup.msi" (
-  echo.
-  echo Downloading clawPDF (oddprint virtual printer engine, needed for the installer
-  echo to compile even if you don't check the oddprint option)...
-  powershell -NoProfile -Command ^
-    "$ErrorActionPreference='Stop'; New-Item -ItemType Directory -Force -Path packaging\vendor | Out-Null; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/clawsoftware/clawPDF/0.9.3/src/_MSI/clawPDF_0.9.3_setup.msi' -OutFile 'packaging\vendor\clawPDF_setup.msi'; $hash = (Get-FileHash -Path 'packaging\vendor\clawPDF_setup.msi' -Algorithm SHA256).Hash; if ($hash -ne '4B8102955E7A75149C45EFC968643DB87B3AED85753136B186734EE1C614298C') { Write-Error \"checksum mismatch: $hash\"; exit 1 }"
-  if errorlevel 1 (
-    echo.
-    echo Could not download clawPDF_setup.msi - check your internet connection and re-run.
-    pause
-    exit /b 1
-  )
-)
-
 where iscc >nul 2>nul
 if errorlevel 1 (
   echo.
