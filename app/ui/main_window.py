@@ -52,6 +52,7 @@ from ..pdf_parser import detect_personnel, detect_project, extract_pdf_text, par
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
+from .print_dialog_catcher import make_print_dialog_catcher
 from .print_watch import PrintInboxWatcher
 from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
 from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
@@ -104,6 +105,7 @@ class MainWindow(QMainWindow):
         self._print_watcher = PrintInboxWatcher(self)
         self._print_watcher.fileReady.connect(self._on_print_job_ready)
         self._print_watcher.scan_existing()
+        self._print_dialog_catcher = make_print_dialog_catcher(self)
 
     def _on_print_job_ready(self, path: str) -> None:
         """A PDF landed in the Print Inbox folder (see print_watch.py) - load it like any
@@ -271,8 +273,9 @@ class MainWindow(QMainWindow):
         print_inbox_row = QHBoxLayout()
         print_inbox_row.setSpacing(8)
         print_inbox_tip = QLabel(
-            'Tip: print anything to "Microsoft Print to PDF" (built into Windows, no install needed), '
-            "save it into the Print Inbox folder, and it loads here automatically."
+            'Tip: print anything to "Microsoft Print to PDF" (built into Windows, no install needed) '
+            "and it loads here automatically - the app fills in the save location for you. If that "
+            "doesn't happen, save it into the Print Inbox folder yourself instead."
         )
         print_inbox_tip.setObjectName("mutedLabel")
         print_inbox_tip.setWordWrap(True)
