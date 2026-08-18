@@ -52,7 +52,7 @@ from ..pdf_parser import detect_personnel, detect_project, extract_pdf_text, par
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
-from .print_dialog_catcher import make_print_dialog_catcher
+from .print_dialog_catcher import PrintDialogCatcher
 from .print_watch import PrintInboxWatcher
 from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
 from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
@@ -105,17 +105,18 @@ class MainWindow(QMainWindow):
         self._print_watcher = PrintInboxWatcher(self)
         self._print_watcher.fileReady.connect(self._on_print_job_ready)
         self._print_watcher.scan_existing()
-        self._print_dialog_catcher = make_print_dialog_catcher(self)
+        self._print_dialog_catcher = PrintDialogCatcher(self)
 
     def _on_print_job_ready(self, path: str) -> None:
         """A PDF landed in the Print Inbox folder (see print_watch.py) - load it like any
-        other work list. Only remove the inbox copy on success, once
-        analyze_work_list() has saved its own stable copy under the managed project
-        folder - if it failed (e.g. a non-work-list PDF got printed by mistake), leave
-        it in place rather than silently discarding the only copy."""
+        other work list. Only remove the inbox copy once analyze_work_list() has both
+        succeeded AND moved it to a separate stable copy under the managed project folder
+        - _save_work_order_copy silently keeps the original path on a copy failure, so
+        checking source_path actually changed (not just the bool) is what guarantees a
+        failed parse, or a copy that didn't happen, always leaves the only copy in place."""
         pdf_path = Path(path)
         self.set_pdf_path(str(pdf_path))
-        if self.analyze_work_list():
+        if self.analyze_work_list() and self.source_path != pdf_path:
             try:
                 pdf_path.unlink(missing_ok=True)
             except OSError:

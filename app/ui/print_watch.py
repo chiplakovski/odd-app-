@@ -48,11 +48,8 @@ class PrintInboxWatcher(QObject):
     def _check_pending(self) -> None:
         still_pending: dict[str, int] = {}
         for key, last_size in self._pending.items():
-            path = Path(key)
-            if not path.exists():
-                continue
             try:
-                size = path.stat().st_size
+                size = Path(key).stat().st_size
             except OSError:
                 continue
             if size == last_size and size > 0:
