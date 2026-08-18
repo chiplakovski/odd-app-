@@ -72,8 +72,8 @@ begin
      SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
   begin
     MsgBox('The oddprint printer needs administrator approval to install, which was not given (or the install failed).' + #13#10#13#10 +
-      'You can install it later by running this file as an administrator:' + #13#10 + MsiPath +
-      #13#10#13#10 + '(it will be deleted from this temp location after Setup closes - copy it somewhere first if you plan to run it later)',
+      'You can install it later by running this file as an administrator:' + #13#10 + MsiPath + #13#10#13#10 +
+      '(it will be deleted from this temp location after Setup closes - copy it somewhere first if you plan to run it later)',
       mbInformation, MB_OK);
     exit;
   end;
