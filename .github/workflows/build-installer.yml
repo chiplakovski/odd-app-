@@ -25,6 +25,20 @@ jobs:
       - name: Build application (PyInstaller)
         run: pyinstaller packaging\build.spec --noconfirm
 
+      - name: Download clawPDF (oddprint virtual printer engine)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path packaging\vendor | Out-Null
+          $dest = "packaging\vendor\clawPDF_setup.msi"
+          Invoke-WebRequest -Uri "https://raw.githubusercontent.com/clawsoftware/clawPDF/0.9.3/src/_MSI/clawPDF_0.9.3_setup.msi" -OutFile $dest
+          $hash = (Get-FileHash -Path $dest -Algorithm SHA256).Hash
+          $expected = "4B8102955E7A75149C45EFC968643DB87B3AED85753136B186734EE1C614298C"
+          if ($hash -ne $expected) {
+            throw "clawPDF_setup.msi checksum mismatch: got $hash, expected $expected"
+          }
+          Write-Host "clawPDF_setup.msi verified: $hash"
+
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 

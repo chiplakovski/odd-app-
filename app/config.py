@@ -42,6 +42,11 @@ WORK_ORDER_FOLDER = "ODD work"
 HOTWORK_SUBFOLDER = "HotW"
 INSPECTION_REPORT_SUBFOLDER = "IRep"
 
+# Where the "oddprint" virtual printer (see packaging/) drops PDFs for pickup. The app
+# watches this folder and auto-imports anything that lands here, same as loading a work
+# list PDF by hand.
+PRINT_INBOX_DIR = USER_DATA_DIR / "PrintInbox"
+
 
 def project_output_dir(project_number: str) -> Path:
     """The auto-managed folder for one project's files: <app data>/ODD work/<project number>/.

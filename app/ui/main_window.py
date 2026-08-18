@@ -51,6 +51,7 @@ from ..pdf_parser import detect_personnel, detect_project, extract_pdf_text, par
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
+from .print_watch import PrintInboxWatcher
 from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
 from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
 
@@ -98,6 +99,24 @@ class MainWindow(QMainWindow):
         self._update_file_card()
         self._update_report_groups()
         self._update_recent_activity()
+
+        self._print_watcher = PrintInboxWatcher(self)
+        self._print_watcher.fileReady.connect(self._on_print_job_ready)
+        self._print_watcher.scan_existing()
+
+    def _on_print_job_ready(self, path: str) -> None:
+        """A PDF landed in the oddprint inbox (see print_watch.py) - load it like any
+        other work list. Only remove the inbox copy on success, once
+        analyze_work_list() has saved its own stable copy under the managed project
+        folder - if it failed (e.g. a non-work-list PDF got printed by mistake), leave
+        it in place rather than silently discarding the only copy."""
+        pdf_path = Path(path)
+        self.set_pdf_path(str(pdf_path))
+        if self.analyze_work_list():
+            try:
+                pdf_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _build_ui(self) -> None:
         # The shipyard photograph is the full-window background. Every UI surface floats above it.
@@ -501,11 +520,11 @@ class MainWindow(QMainWindow):
             self.file_status_label.setStyleSheet("")
             self.file_meta_label.setText("Pages: —     Extracted: —")
 
-    def analyze_work_list(self) -> None:
+    def analyze_work_list(self) -> bool:
         if not self.source_path:
             self.choose_pdf()
             if not self.source_path:
-                return
+                return False
         try:
             text = extract_pdf_text(self.source_path)
             ship, project_number = detect_project(text, self.source_path)
@@ -528,12 +547,14 @@ class MainWindow(QMainWindow):
             self.status_message(
                 f"Loaded {len(items)} {self.category_name.lower()} items ({self.range_start}–{self.range_end}) from {self.source_path.name}."
             )
+            return True
         except Exception as exc:
             self.status_message("Could not analyze the work list.", error=True)
             QMessageBox.critical(self, APP_TITLE, str(exc))
+            return False
 
     def _save_work_order_copy(self, project_number: str) -> Path:
-        """Copy the source PDF into <Desktop>/ODD work/<project>/WO<project>.pdf.
+        """Copy the source PDF into <app data>/ODD work/<project>/WO<project>.pdf.
 
         Returns that stable path (or the original source path if the copy fails), so
         later re-loads via History always find the same file even if the originally
