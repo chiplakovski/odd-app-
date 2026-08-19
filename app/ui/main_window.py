@@ -111,20 +111,12 @@ class MainWindow(QMainWindow):
         """A PDF landed in the Print Inbox folder (see print_watch.py) - load it like any
         other work list. Bring the window to front first, in case it's behind something
         else - the user just acted (printed something) expecting to see the result, success
-        or failure. Only remove the inbox copy once analyze_work_list() has both succeeded
-        AND moved it to a separate stable copy under the managed project folder -
-        _save_work_order_copy silently keeps the original path on a copy failure, so
-        checking source_path actually changed (not just the bool) is what guarantees a
-        failed parse, or a copy that didn't happen, always leaves the only copy in place."""
+        or failure. analyze_work_list() takes care of cleaning up the inbox copy itself
+        (see _cleanup_print_inbox_source) once it's safely copied elsewhere."""
         self.raise_()
         self.activateWindow()
-        pdf_path = Path(path)
-        self.set_pdf_path(str(pdf_path))
-        if self.analyze_work_list() and self.source_path != pdf_path:
-            try:
-                pdf_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+        self.set_pdf_path(path)
+        self.analyze_work_list()
 
     def _build_ui(self) -> None:
         # The shipyard photograph is the full-window background. Every UI surface floats above it.
@@ -548,6 +540,7 @@ class MainWindow(QMainWindow):
             self.choose_pdf()
             if not self.source_path:
                 return False
+        original_path = self.source_path
         try:
             text = extract_pdf_text(self.source_path)
             ship, project_number = detect_project(text, self.source_path)
@@ -568,6 +561,7 @@ class MainWindow(QMainWindow):
             self._refresh_generated_reports()
             self._record_work_order_history(ship, project_number)
             self._update_recent_activity()
+            self._cleanup_print_inbox_source(original_path)
             self.status_message(
                 f"Loaded {len(items)} {self.category_name.lower()} items ({self.range_start}–{self.range_end}) from {self.source_path.name}."
             )
@@ -576,6 +570,23 @@ class MainWindow(QMainWindow):
             self.status_message("Could not analyze the work list.", error=True)
             QMessageBox.critical(self, APP_TITLE, str(exc))
             return False
+
+    def _cleanup_print_inbox_source(self, original_path: Path) -> None:
+        """If the PDF just loaded came from the Print Inbox folder - dropped/browsed in by
+        hand, or picked up automatically by PrintInboxWatcher - and a separate stable copy
+        now exists under the project folder, remove the inbox copy. Otherwise it lingers
+        there and can be mistaken for a not-yet-loaded print the next time one arrives."""
+        try:
+            if original_path.parent.resolve() != PRINT_INBOX_DIR.resolve():
+                return
+        except OSError:
+            return
+        if self.source_path == original_path:
+            return
+        try:
+            original_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     def _save_work_order_copy(self, project_number: str) -> Path:
         """Copy the source PDF into <app data>/ODD work/<project>/WO<project>.pdf.

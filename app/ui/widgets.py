@@ -179,12 +179,20 @@ class ReportFileRow(QFrame):
     openRequested = Signal()
     deleteRequested = Signal()
 
+    # Report/permit filenames are underscore-separated with no spaces, so Qt's word-wrap
+    # (which only breaks at spaces) can't wrap them - an unwrapped long name reports its
+    # full width as the label's minimum size, which pushes Open/Delete outside the fixed-
+    # width right panel and, since that panel's horizontal scrollbar is disabled, clips
+    # them off entirely. Eliding to a fixed budget (with the full name in a tooltip) keeps
+    # the row width predictable regardless of filename length.
+    _TITLE_MAX_WIDTH = 180
+
     def __init__(self, title: str, subtitle: str) -> None:
         super().__init__()
         self.setObjectName("groupCard")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         badge = QLabel("PDF")
         badge.setAlignment(Qt.AlignCenter)
@@ -196,9 +204,13 @@ class ReportFileRow(QFrame):
 
         text_layout = QVBoxLayout()
         text_layout.setSpacing(0)
-        title_label = QLabel(title)
+        title_label = QLabel()
         title_label.setObjectName("groupTitle")
-        title_label.setWordWrap(True)
+        metrics = title_label.fontMetrics()
+        elided = metrics.elidedText(title, Qt.TextElideMode.ElideMiddle, self._TITLE_MAX_WIDTH)
+        title_label.setText(elided)
+        if elided != title:
+            title_label.setToolTip(title)
         subtitle_label = QLabel(subtitle)
         subtitle_label.setObjectName("groupJobs")
         subtitle_label.setWordWrap(True)
@@ -208,13 +220,13 @@ class ReportFileRow(QFrame):
 
         open_button = QPushButton("Open")
         open_button.setObjectName("secondaryButton")
-        open_button.setFixedWidth(60)
+        open_button.setFixedWidth(50)
         open_button.clicked.connect(self.openRequested.emit)
         layout.addWidget(open_button)
 
         delete_button = QPushButton("Delete")
         delete_button.setObjectName("secondaryButton")
-        delete_button.setFixedWidth(60)
+        delete_button.setFixedWidth(50)
         delete_button.setStyleSheet(f"color: {DANGER};")
         delete_button.clicked.connect(self.deleteRequested.emit)
         layout.addWidget(delete_button)
