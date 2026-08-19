@@ -6,7 +6,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
-    QAbstractItemView,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -18,8 +17,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QRadioButton,
@@ -337,12 +334,20 @@ class HotWorkDialog(QDialog):
     single day or shift, per the template).
     """
 
-    def __init__(self, items: list[WorkItem], vessel: str, initial: HotWorkChecklist, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        items: list[WorkItem],
+        vessel: str,
+        initial: HotWorkChecklist,
+        initial_locations: dict[int, str],
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Generate Hot Work Permits")
         self.resize(760, 760)
         self.items = items
         self.vessel = vessel
+        self._location_edits: dict[int, QLineEdit] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(18, 18, 18, 18)
@@ -358,13 +363,30 @@ class HotWorkDialog(QDialog):
             warning.setWordWrap(True)
             outer.addWidget(warning)
 
-        selected_list = QListWidget()
-        selected_list.setObjectName("workTree")
-        selected_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        selected_list.setMaximumHeight(90)
+        outer.addWidget(self._section_label(
+            "Location for each item (required - a permit isn't generated for an item left blank), e.g. \"main deck\""
+        ))
+        items_container = QWidget()
+        items_layout = QVBoxLayout(items_container)
+        items_layout.setContentsMargins(0, 0, 0, 0)
+        items_layout.setSpacing(6)
         for item in items:
-            QListWidgetItem(f"{item.number} · {default_location(item)}", selected_list)
-        outer.addWidget(selected_list)
+            row = QHBoxLayout()
+            number_label = QLabel(str(item.number))
+            number_label.setObjectName("groupTitle")
+            number_label.setFixedWidth(50)
+            row.addWidget(number_label)
+            edit = QLineEdit(initial_locations.get(item.number, ""))
+            edit.setPlaceholderText(default_location(item))
+            row.addWidget(edit, 1)
+            self._location_edits[item.number] = edit
+            items_layout.addLayout(row)
+        items_scroll = QScrollArea()
+        items_scroll.setObjectName("groupScroll")
+        items_scroll.setWidgetResizable(True)
+        items_scroll.setWidget(items_container)
+        items_scroll.setMaximumHeight(140)
+        outer.addWidget(items_scroll)
 
         scroll = QScrollArea()
         scroll.setObjectName("groupScroll")
@@ -392,15 +414,9 @@ class HotWorkDialog(QDialog):
         date_row.addWidget(self.date_to, 1)
         form.addLayout(date_row)
 
-        # --- Location / logistics ---
-        form.addWidget(self._section_label("Location"))
-        logistics_row = QHBoxLayout()
-        self.location = QLineEdit(initial.location)
-        self.location.setPlaceholderText("Leave blank to use each item's own area")
+        # --- Dock / Quay (shared across all items in this batch; per-item Location is above) ---
         self.dock_quay = QLineEdit(initial.dock_quay)
-        logistics_row.addWidget(self._labeled(self.location, "Location / Workplace override"), 2)
-        logistics_row.addWidget(self._labeled(self.dock_quay, "Dock / Quay"), 1)
-        form.addLayout(logistics_row)
+        form.addWidget(self._labeled(self.dock_quay, "Dock / Quay"))
 
         form.addWidget(self._section_label("Shift (select both to get a separate permit file for each)"))
         shift_row = QHBoxLayout()
@@ -572,7 +588,11 @@ class HotWorkDialog(QDialog):
             shifts.append(("Night", "19:00", "07:00"))
         return shifts
 
-    def build_checklist(self, start_time: str, stop_time: str) -> HotWorkChecklist:
+    def location_for(self, item_number: int) -> str:
+        edit = self._location_edits.get(item_number)
+        return edit.text().strip() if edit else ""
+
+    def build_checklist(self, start_time: str, stop_time: str, location: str) -> HotWorkChecklist:
         return HotWorkChecklist(
             welding=self.welding.isChecked(),
             grinding=self.grinding.isChecked(),
@@ -598,7 +618,7 @@ class HotWorkDialog(QDialog):
             item_9_welding_equipment_ok=self.item_9.isChecked(),
             item_10_emergency_services_reachable=self.item_10.isChecked(),
             fire_alarm_disconnected="yes" if self.alarm_yes.isChecked() else "no" if self.alarm_no.isChecked() else "na",
-            location=self.location.text().strip(),
+            location=location,
             dock_quay=self.dock_quay.text().strip(),
             start_time=start_time,
             stop_time=stop_time,
@@ -610,5 +630,13 @@ class HotWorkDialog(QDialog):
             return
         if not self.selected_shifts():
             QMessageBox.warning(self, APP_TITLE, "Select at least one shift.")
+            return
+        missing = [str(number) for number, edit in self._location_edits.items() if not edit.text().strip()]
+        if missing:
+            QMessageBox.warning(
+                self, APP_TITLE,
+                "Enter a location for every item before generating permits - no permit is "
+                "created for an item left blank. Missing for item(s): " + ", ".join(missing),
+            )
             return
         self.accept()

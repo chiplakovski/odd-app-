@@ -920,8 +920,13 @@ class MainWindow(QMainWindow):
         project_number = self.project_number.text().strip()
         first_key = item_settings_key(project_number, selected[0].number)
         initial = load_item_checklist(first_key) or HotWorkChecklist()
+        initial_locations: dict[int, str] = {}
+        for item in selected:
+            saved = load_item_checklist(item_settings_key(project_number, item.number))
+            if saved and saved.location:
+                initial_locations[item.number] = saved.location
 
-        dialog = HotWorkDialog(selected, vessel, initial, self)
+        dialog = HotWorkDialog(selected, vessel, initial, initial_locations, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -939,7 +944,7 @@ class MainWindow(QMainWindow):
         for item in selected:
             safe_project = (project_number or "Project").replace(" ", "_")
             for shift_label, start_time, stop_time in shifts:
-                checklist = dialog.build_checklist(start_time, stop_time)
+                checklist = dialog.build_checklist(start_time, stop_time, dialog.location_for(item.number))
                 suffix = f"_{shift_label}" if multi_shift else ""
                 base_name = f"{safe_project}_HotWork_{item.number}{suffix}_{start_date.isoformat()}_to_{end_date.isoformat()}"
                 docx_path = out_dir_path / f"{base_name}.docx"
