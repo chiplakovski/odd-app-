@@ -391,7 +391,7 @@ class MainWindow(QMainWindow):
         doc_icon = QLabel()
         doc_icon.setPixmap(icon("document").pixmap(24, 24))
         title_row.addWidget(doc_icon)
-        title = QLabel("Generated Reports")
+        title = QLabel("Generated Files")
         title.setObjectName("sectionTitle")
         title_row.addWidget(title)
         title_row.addStretch(1)
@@ -782,8 +782,9 @@ class MainWindow(QMainWindow):
         self.report_count_label.setText(f"{len(groups)} reports ready")
 
     def _refresh_generated_reports(self) -> None:
-        """Right-panel list of this project's generated Inspection Report PDFs, with
-        Open/Delete actions - see generate_reports()/_open_report_pdf()/_delete_report_pdf()."""
+        """Right-panel list of this project's generated Inspection Report and Hot Work
+        Permit PDFs, with Open/Delete actions - see generate_reports()/open_hotwork_dialog()/
+        _open_report_pdf()/_delete_report_pdf()."""
         while self.group_layout.count():
             item = self.group_layout.takeAt(0)
             widget = item.widget()
@@ -792,14 +793,17 @@ class MainWindow(QMainWindow):
         project_number = self.project_number.text().strip()
         pdfs: list[Path] = []
         if project_number:
-            reports_dir = project_output_dir(project_number) / INSPECTION_REPORT_SUBFOLDER
-            if reports_dir.exists():
-                pdfs = sorted(reports_dir.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+            base_dir = project_output_dir(project_number)
+            for subfolder in (INSPECTION_REPORT_SUBFOLDER, HOTWORK_SUBFOLDER):
+                reports_dir = base_dir / subfolder
+                if reports_dir.exists():
+                    pdfs.extend(reports_dir.glob("*.pdf"))
+            pdfs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         if not pdfs:
             message = (
-                "No inspection reports generated yet for this project."
+                "No reports or permits generated yet for this project."
                 if project_number else
-                "Analyze a work list to see its generated reports here."
+                "Analyze a work list to see its generated files here."
             )
             empty = QLabel(message)
             empty.setObjectName("mutedLabel")
@@ -918,22 +922,35 @@ class MainWindow(QMainWindow):
 
         generated = 0
         errors: list[str] = []
+        conversion_warnings: list[str] = []
+        last_output: Path | None = None
         checklist = None
         for item in selected:
             safe_project = (project_number or "Project").replace(" ", "_")
             for shift_label, start_time, stop_time in shifts:
                 checklist = dialog.build_checklist(start_time, stop_time)
                 suffix = f"_{shift_label}" if multi_shift else ""
-                file_name = f"{safe_project}_HotWork_{item.number}{suffix}_{start_date.isoformat()}_to_{end_date.isoformat()}.docx"
-                output_path = out_dir_path / file_name
+                base_name = f"{safe_project}_HotWork_{item.number}{suffix}_{start_date.isoformat()}_to_{end_date.isoformat()}"
+                docx_path = out_dir_path / f"{base_name}.docx"
+                pdf_path = out_dir_path / f"{base_name}.pdf"
                 try:
                     page_count = generate_hotwork_permits(
-                        item, vessel, checklist, start_date, end_date, output_path,
+                        item, vessel, checklist, start_date, end_date, docx_path,
                         issuer_name=self.info.supervisor_name, issuer_company=self.info.supervisor_company,
                     )
                 except Exception as exc:
                     errors.append(f"Item {item.number} ({shift_label}): {exc}")
                     continue
+
+                try:
+                    convert_docx_to_pdf(docx_path, pdf_path)
+                    docx_path.unlink(missing_ok=True)
+                    output_path = pdf_path
+                except Exception as exc:
+                    output_path = docx_path
+                    conversion_warnings.append(f"Item {item.number} ({shift_label}): {exc}")
+
+                last_output = output_path
                 add_history_entry(
                     HistoryEntry(
                         timestamp=datetime.now().isoformat(timespec="seconds"),
@@ -958,11 +975,21 @@ class MainWindow(QMainWindow):
 
         if errors:
             QMessageBox.warning(self, APP_TITLE, "Some permits could not be generated:\n\n" + "\n".join(errors))
+        if conversion_warnings:
+            QMessageBox.warning(
+                self, APP_TITLE,
+                "Some permits couldn't be converted to PDF and were kept as Word documents instead:\n\n"
+                + "\n".join(conversion_warnings),
+            )
         if generated:
             self._update_recent_activity()
+            self._refresh_generated_reports()
             self.status_message(f"Created {generated} hot work permit file(s).")
-            QMessageBox.information(self, APP_TITLE, f"Created {generated} hot work permit file(s) in:\n\n{out_dir_path}")
-            open_with_system_default(str(out_dir_path))
+            if generated == 1 and last_output is not None and last_output.suffix.lower() == ".pdf":
+                self._open_report_pdf(last_output)
+            else:
+                QMessageBox.information(self, APP_TITLE, f"Created {generated} hot work permit file(s) in:\n\n{out_dir_path}")
+                open_with_system_default(str(out_dir_path))
 
     def open_history(self) -> None:
         self.set_active_nav(HISTORY_NAV_INDEX)
