@@ -9,7 +9,6 @@ from PySide6.QtCore import QDate, QPoint, QRect, QSize, Qt
 from PySide6.QtGui import QAction, QColor, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QDateEdit,
     QDialog,
     QFileDialog,
@@ -25,7 +24,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSystemTrayIcon,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -54,9 +52,7 @@ from ..pdf_parser import detect_personnel, detect_project, extract_pdf_text, par
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
-from .print_dialog_catcher import PrintDialogCatcher
 from .print_watch import PrintInboxWatcher
-from .startup import set_start_at_login
 from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
 from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
 
@@ -108,55 +104,18 @@ class MainWindow(QMainWindow):
         self._print_watcher = PrintInboxWatcher(self)
         self._print_watcher.fileReady.connect(self._on_print_job_ready)
         self._print_watcher.scan_existing()
-        self._print_dialog_catcher = PrintDialogCatcher(self)
-
-        self._tray_icon = self._build_tray_icon()
-        self._tray_icon.setVisible(self.info.start_at_login)
-
-    def _build_tray_icon(self) -> QSystemTrayIcon:
-        """Lets the app keep running (and catching prints) after the window is closed, when
-        "Start automatically when Windows starts" is on - see closeEvent and open_settings."""
-        tray = QSystemTrayIcon(QIcon(asset("app_icon.ico")), self)
-        tray.setToolTip(APP_TITLE)
-        menu = QMenu(self)
-        menu.addAction("Open").triggered.connect(self._show_and_raise)
-        menu.addAction("Exit").triggered.connect(QApplication.instance().quit)
-        tray.setContextMenu(menu)
-        tray.activated.connect(
-            lambda reason: self._show_and_raise()
-            if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick)
-            else None
-        )
-        return tray
-
-    def _show_and_raise(self) -> None:
-        self.show()
-        self.maximize_to_screen()
-        self.raise_()
-        self.activateWindow()
-
-    def closeEvent(self, event) -> None:  # type: ignore[override]
-        # QApplication.quitOnLastWindowClosed is turned off (see app/main.py) so the tray
-        # branch below can hide the window without the app quitting out from under it -
-        # which means the non-tray branch has to quit explicitly instead of relying on it.
-        if self.info.start_at_login and self._tray_icon.isVisible():
-            event.ignore()
-            self.hide()
-        else:
-            event.accept()
-            QApplication.instance().quit()
 
     def _on_print_job_ready(self, path: str) -> None:
         """A PDF landed in the Print Inbox folder (see print_watch.py) - load it like any
-        other work list. Surface the window first: this may be firing while the app is
-        sitting hidden in the tray (see closeEvent/_build_tray_icon), and the user just
-        acted (printed something) expecting to see the result, success or failure. Only
-        remove the inbox copy once analyze_work_list() has both succeeded AND moved it to
-        a separate stable copy under the managed project folder - _save_work_order_copy
-        silently keeps the original path on a copy failure, so checking source_path
-        actually changed (not just the bool) is what guarantees a failed parse, or a copy
-        that didn't happen, always leaves the only copy in place."""
-        self._show_and_raise()
+        other work list. Bring the window to front first, in case it's behind something
+        else - the user just acted (printed something) expecting to see the result, success
+        or failure. Only remove the inbox copy once analyze_work_list() has both succeeded
+        AND moved it to a separate stable copy under the managed project folder -
+        _save_work_order_copy silently keeps the original path on a copy failure, so
+        checking source_path actually changed (not just the bool) is what guarantees a
+        failed parse, or a copy that didn't happen, always leaves the only copy in place."""
+        self.raise_()
+        self.activateWindow()
         pdf_path = Path(path)
         self.set_pdf_path(str(pdf_path))
         if self.analyze_work_list() and self.source_path != pdf_path:
@@ -317,11 +276,8 @@ class MainWindow(QMainWindow):
         print_inbox_row = QHBoxLayout()
         print_inbox_row.setSpacing(8)
         print_inbox_tip = QLabel(
-            'Tip: print anything to "Microsoft Print to PDF" (built into Windows, no install needed) '
-            "and it loads here automatically - the app fills in the save location for you. If that "
-            "doesn't happen, save it into the Print Inbox folder yourself instead. Turn on \"Start "
-            "automatically when Windows starts\" in Settings so this works even without opening the "
-            "app first."
+            'Tip: print anything to "Microsoft Print to PDF" (built into Windows, no install needed), '
+            "save it into the Print Inbox folder, and it loads here automatically."
         )
         print_inbox_tip.setObjectName("mutedLabel")
         print_inbox_tip.setWordWrap(True)
@@ -1003,9 +959,6 @@ class MainWindow(QMainWindow):
             self.info.inspection_method = dialog.inspection_method.currentText()
             self.info.completion_result = dialog.completion_result.currentText()
             self.info.only_finished = dialog.only_finished.isChecked()
-            self.info.start_at_login = dialog.start_at_login.isChecked()
-            set_start_at_login(self.info.start_at_login)
-            self._tray_icon.setVisible(self.info.start_at_login)
             self.grouping_mode = dialog.grouping.currentText()
             if self.items:
                 apply_auto_grouping(self.items, self.grouping_mode)

@@ -55,14 +55,6 @@ class SettingsDialog(QDialog):
         self.supervisor_name = QLineEdit(info.supervisor_name)
         self.only_finished = QCheckBox("Only include Finished / Completed items")
         self.only_finished.setChecked(info.only_finished)
-        self.start_at_login = QCheckBox("Start automatically when Windows starts")
-        self.start_at_login.setChecked(info.start_at_login)
-        self.start_at_login.setToolTip(
-            "Keeps the app running in the background (system tray) so printing to \"Microsoft "
-            "Print to PDF\" auto-loads a work list even if you haven't opened the app yourself. "
-            "While this is on, closing the window minimizes it to the tray instead of quitting - "
-            "use the tray icon's Exit to close it fully."
-        )
         self.grouping = QComboBox()
         self.grouping.addItems(["none", "balanced", "maximum"])
         self.grouping.setCurrentText(grouping)
@@ -88,7 +80,6 @@ class SettingsDialog(QDialog):
         form.addRow("Results and remarks", self.completion_result)
         form.addRow("Automatic grouping", self.grouping)
         form.addRow("", self.only_finished)
-        form.addRow("", self.start_at_login)
         layout.addLayout(form)
         note = QLabel("For the Steel range, items 3180, 3185 and 3195 are automatically excluded from the report set.")
         note.setWordWrap(True)

@@ -49,11 +49,7 @@ a = Analysis(
         (str(REPO_ROOT / "app" / "assets"), "assets"),
         (str(REPO_ROOT / "app" / "templates"), "templates"),
     ],
-    # win32gui/win32con back the Print Inbox auto-catch dialog automation (Windows-only,
-    # see app/ui/print_dialog_catcher.py) - imported inside a try/except so PyInstaller's
-    # static bytecode scan should already find them, but hiddenimports is cheap insurance
-    # since this can't be verified without a real Windows build.
-    hiddenimports=["win32gui", "win32con"],
+    hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
     excludes=UNUSED_QT_MODULES,
