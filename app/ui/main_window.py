@@ -48,13 +48,15 @@ from ..history import HistoryEntry, add_history_entry, load_history
 from ..hotwork import HotWorkChecklist, item_settings_key, load_item_checklist, save_item_checklist
 from ..hotwork_export import generate_hotwork_permits
 from ..models import WorkItem
+from ..pdf_export import convert_docx_to_pdf
 from ..pdf_parser import detect_personnel, detect_project, extract_pdf_text, parse_work_items
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
 from .os_utils import open_with_system_default
+from .pdf_viewer import PdfViewerDialog
 from .print_watch import PrintInboxWatcher
 from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
-from .widgets import ActivityRow, BackgroundWidget, BannerWidget, GroupCard, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
+from .widgets import ActivityRow, BackgroundWidget, BannerWidget, ReportFileRow, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
 
 MAX_ACTIVITY_ROWS = 6
 
@@ -84,10 +86,9 @@ class MainWindow(QMainWindow):
         self.category_name = "Steel"
         self.range_start = 3000
         self.range_end = 3999
-        self.selected_group_index = 0
-        self._current_report_groups: list[list[WorkItem]] = []
         self._table_updating = False
         self._page_count = 0
+        self._pdf_viewer: PdfViewerDialog | None = None
         # A custom "maximize" that resizes to the screen's available geometry, rather than
         # relying on Qt.FramelessWindowHint's native maximize: on Windows the latter reports a
         # window slightly larger than the visible screen to compensate for the OS resize
@@ -98,7 +99,8 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._apply_styles()
         self._update_file_card()
-        self._update_report_groups()
+        self._update_report_count_label()
+        self._refresh_generated_reports()
         self._update_recent_activity()
 
         self._print_watcher = PrintInboxWatcher(self)
@@ -341,7 +343,7 @@ class MainWindow(QMainWindow):
         self.hotwork_button.setObjectName("largeSecondary")
         self.hotwork_button.clicked.connect(self.open_hotwork_dialog)
         action_row.addWidget(self.hotwork_button)
-        self.generate_button = QPushButton("Generate DOCX Reports")
+        self.generate_button = QPushButton("Inspection Reports")
         self.generate_button.setIcon(icon("generate"))
         self.generate_button.setObjectName("largePrimary")
         self.generate_button.clicked.connect(self.generate_reports)
@@ -389,7 +391,7 @@ class MainWindow(QMainWindow):
         doc_icon = QLabel()
         doc_icon.setPixmap(icon("document").pixmap(24, 24))
         title_row.addWidget(doc_icon)
-        title = QLabel("Combined Inspection Reports")
+        title = QLabel("Generated Reports")
         title.setObjectName("sectionTitle")
         title_row.addWidget(title)
         title_row.addStretch(1)
@@ -503,7 +505,7 @@ class MainWindow(QMainWindow):
         # Clear the previously displayed department, then re-read the same PDF if loaded.
         self.items = []
         self.tree.clear()
-        self._update_report_groups()
+        self._update_report_count_label()
         self._update_file_card()
         self.status_message(f"Selected {self.category_name} items {self.range_start}–{self.range_end}.")
         if self.source_path:
@@ -562,7 +564,8 @@ class MainWindow(QMainWindow):
             self.source_path = self._save_work_order_copy(project_number)
             self._populate_tree()
             self._update_file_card()
-            self._update_report_groups()
+            self._update_report_count_label()
+            self._refresh_generated_reports()
             self._record_work_order_history(ship, project_number)
             self._update_recent_activity()
             self.status_message(
@@ -669,7 +672,7 @@ class MainWindow(QMainWindow):
         item = self._item_by_number(number)
         if item:
             item.included = tree_item.checkState(0) == Qt.Checked
-            self._update_report_groups()
+            self._update_report_count_label()
 
     def selected_work_items(self) -> list[WorkItem]:
         selected: list[WorkItem] = []
@@ -719,7 +722,7 @@ class MainWindow(QMainWindow):
         for item in selected:
             item.included = included
         self._populate_tree()
-        self._update_report_groups()
+        self._update_report_count_label()
 
     def merge_selected(self) -> None:
         selected = self.selected_work_items()
@@ -733,7 +736,7 @@ class MainWindow(QMainWindow):
                 item.group = name.strip()
                 item.included = True
             self._populate_tree()
-            self._update_report_groups()
+            self._update_report_count_label()
 
     def new_group_selected(self) -> None:
         selected = self.selected_work_items()
@@ -746,7 +749,7 @@ class MainWindow(QMainWindow):
                 item.group = name.strip()
                 item.included = True
             self._populate_tree()
-            self._update_report_groups()
+            self._update_report_count_label()
 
     def edit_selected_summary(self, *_args) -> None:
         selected = self.selected_work_items()
@@ -757,7 +760,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             item.summary = dialog.summary.toPlainText().strip()
             self._populate_tree()
-            self._update_report_groups()
+            self._update_report_count_label()
 
     def _current_info(self) -> ProjectInfo:
         inspector_lines = [part.strip() for part in self.inspectors.text().replace("\n", ";").split(";") if part.strip()]
@@ -774,45 +777,66 @@ class MainWindow(QMainWindow):
             completion_result=self.info.completion_result,
         )
 
-    def _update_report_groups(self) -> None:
+    def _update_report_count_label(self) -> None:
+        groups = group_items(self.items, self.info.only_finished) if self.items else []
+        self.report_count_label.setText(f"{len(groups)} reports ready")
+
+    def _refresh_generated_reports(self) -> None:
+        """Right-panel list of this project's generated Inspection Report PDFs, with
+        Open/Delete actions - see generate_reports()/_open_report_pdf()/_delete_report_pdf()."""
         while self.group_layout.count():
             item = self.group_layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
-        groups = group_items(self.items, self.info.only_finished) if self.items else []
-        self._current_report_groups = groups
-        if self.selected_group_index >= len(groups):
-            self.selected_group_index = 0
-        for index, group in enumerate(groups):
-            name = display_group_name(group[0].group or f"ITEM {group[0].number}")
-            card = GroupCard(index, name, len(group), index == self.selected_group_index)
-            card.clicked.connect(self.select_group)
-            self.group_layout.addWidget(card)
+        project_number = self.project_number.text().strip()
+        pdfs: list[Path] = []
+        if project_number:
+            reports_dir = project_output_dir(project_number) / INSPECTION_REPORT_SUBFOLDER
+            if reports_dir.exists():
+                pdfs = sorted(reports_dir.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not pdfs:
+            message = (
+                "No inspection reports generated yet for this project."
+                if project_number else
+                "Analyze a work list to see its generated reports here."
+            )
+            empty = QLabel(message)
+            empty.setObjectName("mutedLabel")
+            empty.setWordWrap(True)
+            self.group_layout.addWidget(empty)
+        for pdf in pdfs:
+            subtitle = datetime.fromtimestamp(pdf.stat().st_mtime).strftime("Generated %b %d, %Y %H:%M")
+            row = ReportFileRow(pdf.name, subtitle)
+            row.openRequested.connect(lambda p=pdf: self._open_report_pdf(p))
+            row.deleteRequested.connect(lambda p=pdf: self._delete_report_pdf(p))
+            self.group_layout.addWidget(row)
         self.group_layout.addStretch(1)
-        self.report_count_label.setText(f"{len(groups)} reports ready")
 
-    def select_group(self, index: int) -> None:
-        self.selected_group_index = index
-        self._update_report_groups()
-        if 0 <= index < len(self._current_report_groups):
-            group = self._current_report_groups[index]
-            raw_key = group[0].group or f"ITEM {group[0].number}"
-            self._jump_to_group(raw_key)
+    def _open_report_pdf(self, path: Path) -> None:
+        if not path.exists():
+            QMessageBox.information(self, APP_TITLE, "That report file could not be found.")
+            self._refresh_generated_reports()
+            return
+        if self._pdf_viewer is None:
+            self._pdf_viewer = PdfViewerDialog(self)
+        self._pdf_viewer.load_pdf(path)
+        self._pdf_viewer.show()
+        self._pdf_viewer.raise_()
+        self._pdf_viewer.activateWindow()
 
-    def _jump_to_group(self, raw_key: str) -> None:
-        """Scroll the main work list table to and select the given group's rows."""
-        for i in range(self.tree.topLevelItemCount()):
-            group_item = self.tree.topLevelItem(i)
-            if group_item.data(0, Qt.UserRole) != raw_key:
-                continue
-            group_item.setExpanded(True)
-            self.tree.scrollToItem(group_item)
-            self.tree.clearSelection()
-            group_item.setSelected(True)
-            for c in range(group_item.childCount()):
-                group_item.child(c).setSelected(True)
-            break
+    def _delete_report_pdf(self, path: Path) -> None:
+        reply = QMessageBox.question(
+            self, APP_TITLE, f"Delete this report?\n\n{path.name}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(self, APP_TITLE, f"Could not delete the file:\n\n{exc}")
+        self._refresh_generated_reports()
 
     def _update_recent_activity(self) -> None:
         while self.activity_layout.count():
@@ -866,7 +890,10 @@ class MainWindow(QMainWindow):
                 return
             if clicked is not open_button:
                 return
-        open_with_system_default(path)
+        if path.lower().endswith(".pdf"):
+            self._open_report_pdf(Path(path))
+        else:
+            open_with_system_default(path)
 
     def open_hotwork_dialog(self) -> None:
         self.set_active_nav(HOTWORK_NAV_INDEX)
@@ -965,7 +992,7 @@ class MainWindow(QMainWindow):
                 apply_steel_auto_exclusions(self.items, self.range_start, self.range_end)
                 self._populate_tree()
             save_settings(self.info)
-            self._update_report_groups()
+            self._update_report_count_label()
             self.status_message("Settings saved.")
 
     def generate_reports(self) -> None:
@@ -977,22 +1004,41 @@ class MainWindow(QMainWindow):
         if not info.project_name or not info.project_number:
             QMessageBox.warning(self, APP_TITLE, "Project name and project number are required.")
             return
-        default_name = f"{info.project_number}_{info.project_name}_{self.category_name}_Inspection_and_Test_Reports.docx".replace(" ", "_")
-        output = project_output_dir(info.project_number) / INSPECTION_REPORT_SUBFOLDER / default_name
+        base_name = f"{info.project_number}_{info.project_name}_{self.category_name}_Inspection_and_Test_Reports".replace(" ", "_")
+        out_dir = project_output_dir(info.project_number) / INSPECTION_REPORT_SUBFOLDER
+        docx_path = out_dir / f"{base_name}.docx"
+        pdf_path = out_dir / f"{base_name}.pdf"
         try:
-            count = generate_docx(self.items, info, output, MASTER_TEMPLATE)
-            self.last_output = output
-            self.output_folder_label.setText(f"Output Folder: {self.last_output.parent}")
-            save_settings(info)
-            self._record_history(info, count)
-            self._update_recent_activity()
-            self.status_message(f"Created {count} inspection report page(s).")
-            self.report_count_label.setText(f"{count} reports ready")
-            QMessageBox.information(self, APP_TITLE, f"Created {count} inspection report page(s):\n\n{output}")
-            open_with_system_default(str(output))
+            count = generate_docx(self.items, info, docx_path, MASTER_TEMPLATE)
         except Exception as exc:
             self.status_message("Could not generate the reports.", error=True)
             QMessageBox.critical(self, APP_TITLE, str(exc))
+            return
+
+        try:
+            convert_docx_to_pdf(docx_path, pdf_path)
+            docx_path.unlink(missing_ok=True)
+            output = pdf_path
+        except Exception as exc:
+            output = docx_path
+            QMessageBox.warning(
+                self, APP_TITLE,
+                f"The report was generated, but couldn't be converted to PDF:\n\n{exc}\n\n"
+                f"Saved as a Word document instead:\n{docx_path}",
+            )
+
+        self.last_output = output
+        self.output_folder_label.setText(f"Output Folder: {self.last_output.parent}")
+        save_settings(info)
+        self._record_history(info, count)
+        self._update_recent_activity()
+        self._refresh_generated_reports()
+        self.status_message(f"Created {count} inspection report page(s).")
+        self.report_count_label.setText(f"{count} reports ready")
+        if output.suffix.lower() == ".pdf":
+            self._open_report_pdf(output)
+        else:
+            open_with_system_default(str(output))
 
     def _record_history(self, info: ProjectInfo, report_count: int) -> None:
         add_history_entry(

@@ -173,37 +173,51 @@ class UploadDropFrame(QFrame):
                 event.acceptProposedAction()
 
 
-class GroupCard(QFrame):
-    """A compact row for one report group: name + item count. Click to jump to
-    that group's rows in the main work list table."""
+class ReportFileRow(QFrame):
+    """A row in the generated-reports file list: filename + Open/Delete actions."""
 
-    clicked = Signal(int)
+    openRequested = Signal()
+    deleteRequested = Signal()
 
-    def __init__(self, index: int, title: str, count: int, selected: bool = False) -> None:
+    def __init__(self, title: str, subtitle: str) -> None:
         super().__init__()
-        self.index = index
-        self.setObjectName("groupCardSelected" if selected else "groupCard")
-        self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(38)
+        self.setObjectName("groupCard")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 4, 10, 4)
+        layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(10)
+
+        badge = QLabel("PDF")
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setFixedSize(40, 20)
+        badge.setStyleSheet(
+            f"background: {SUCCESS}; color: #0a1420; border-radius: 5px; font-weight: 700; font-size: 9px;"
+        )
+        layout.addWidget(badge)
+
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(0)
         title_label = QLabel(title)
         title_label.setObjectName("groupTitle")
-        layout.addWidget(title_label, 1)
-        badge = QLabel(str(count))
-        badge.setObjectName("countBadge")
-        badge.setAlignment(Qt.AlignCenter)
-        badge.setFixedSize(26, 26)
-        layout.addWidget(badge)
-        arrow = QLabel("›")
-        arrow.setObjectName("chevron")
-        layout.addWidget(arrow)
+        title_label.setWordWrap(True)
+        subtitle_label = QLabel(subtitle)
+        subtitle_label.setObjectName("groupJobs")
+        subtitle_label.setWordWrap(True)
+        text_layout.addWidget(title_label)
+        text_layout.addWidget(subtitle_label)
+        layout.addLayout(text_layout, 1)
 
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit(self.index)
-        super().mousePressEvent(event)
+        open_button = QPushButton("Open")
+        open_button.setObjectName("secondaryButton")
+        open_button.setFixedWidth(60)
+        open_button.clicked.connect(self.openRequested.emit)
+        layout.addWidget(open_button)
+
+        delete_button = QPushButton("Delete")
+        delete_button.setObjectName("secondaryButton")
+        delete_button.setFixedWidth(60)
+        delete_button.setStyleSheet(f"color: {DANGER};")
+        delete_button.clicked.connect(self.deleteRequested.emit)
+        layout.addWidget(delete_button)
 
 
 class ActivityRow(QFrame):

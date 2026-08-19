@@ -14,10 +14,11 @@ block_cipher = None
 REPO_ROOT = Path(SPECPATH).resolve().parent
 APP_NAME = "ODD Inspection Report Generator"
 
-# The app only uses QtCore/QtGui/QtWidgets (plus SVG icon rendering). This trims the Qt
+# The app uses QtCore/QtGui/QtWidgets (plus SVG icon rendering), QtPdf/QtPdfWidgets (the
+# in-app report viewer) and QtPrintSupport (print/print preview). This trims the Qt
 # submodules that are pure Python-level extras (QtTest, QtDesigner, QtHelp, ...). Most of
 # PySide6's bundle size is Qt's own binary-level dependencies between Core/Gui/Widgets and
-# things like Network/Qml/Pdf (pulled in by PyInstaller's Qt dependency walker regardless of
+# things like Network/Qml (pulled in by PyInstaller's Qt dependency walker regardless of
 # excludes, confirmed by testing), so don't expect this list to shrink the build dramatically
 # - it's a small, safe trim, not the fix for a slow first launch (that's almost always
 # Windows Defender/antivirus scanning the freshly-installed exe, which only happens once).
@@ -29,7 +30,6 @@ UNUSED_QT_MODULES = [
     "PySide6.QtWebChannel", "PySide6.QtWebSockets",
     "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets",
     "PySide6.QtNetwork", "PySide6.QtSql", "PySide6.QtXml",
-    "PySide6.QtPdf", "PySide6.QtPdfWidgets",
     "PySide6.QtBluetooth", "PySide6.QtNfc", "PySide6.QtPositioning", "PySide6.QtLocation",
     "PySide6.QtSensors", "PySide6.QtSerialPort",
     "PySide6.QtCharts", "PySide6.QtDataVisualization", "PySide6.QtGraphs", "PySide6.QtGraphsWidgets",
@@ -49,7 +49,11 @@ a = Analysis(
         (str(REPO_ROOT / "app" / "assets"), "assets"),
         (str(REPO_ROOT / "app" / "templates"), "templates"),
     ],
-    hiddenimports=[],
+    # win32com/pythoncom back the Word COM automation used to convert generated reports
+    # to PDF (Windows-only, see app/pdf_export.py) - imported inside a platform guard so
+    # PyInstaller's static bytecode scan should already find them, but hiddenimports is
+    # cheap insurance since this can't be verified without a real Windows build.
+    hiddenimports=["win32com", "win32com.client", "pythoncom", "pywintypes"],
     hookspath=[],
     runtime_hooks=[],
     excludes=UNUSED_QT_MODULES,
