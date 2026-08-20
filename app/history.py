@@ -62,3 +62,10 @@ def add_history_entry(entry: HistoryEntry) -> list[HistoryEntry]:
 
 def clear_history() -> None:
     save_history([])
+
+
+def remove_history_entry(entry: HistoryEntry) -> None:
+    """Removes exactly this entry (dataclass equality across every field, including the
+    seconds-precision timestamp, is specific enough to tell apart two otherwise-identical
+    runs of the same work order)."""
+    save_history([e for e in load_history() if e != entry])

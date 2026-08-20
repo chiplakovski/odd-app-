@@ -44,7 +44,7 @@ from ..config import (
 )
 from ..docx_export import generate_docx
 from ..grouping import apply_auto_grouping, apply_steel_auto_exclusions, display_group_name, group_items
-from ..history import HistoryEntry, add_history_entry, load_history
+from ..history import HistoryEntry, add_history_entry, load_history, remove_history_entry
 from ..hotwork import HotWorkChecklist, item_settings_key, load_item_checklist, save_item_checklist
 from ..hotwork_export import generate_hotwork_permits
 from ..models import WorkItem
@@ -57,8 +57,6 @@ from .pdf_viewer import PdfViewerDialog
 from .print_watch import PrintInboxWatcher
 from .theme import SUCCESS, WARNING, build_stylesheet
 from .widgets import ActivityRow, BackgroundWidget, BannerWidget, ReportFileRow, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
-
-MAX_ACTIVITY_ROWS = 6
 
 DASHBOARD_NAV_INDEX = 0
 IMPORT_NAV_INDEX = 1
@@ -859,7 +857,7 @@ class MainWindow(QMainWindow):
             widget = item.widget()
             if widget:
                 widget.deleteLater()
-        entries = [entry for entry in load_history() if entry.kind == "workorder"][:MAX_ACTIVITY_ROWS]
+        entries = [entry for entry in load_history() if entry.kind == "workorder"]
         if not entries:
             empty = QLabel("No work orders processed yet.")
             empty.setObjectName("mutedLabel")
@@ -869,37 +867,20 @@ class MainWindow(QMainWindow):
             title = f"{entry.source_name or entry.project_name or 'Work order'} · {entry.item_count} item(s)"
             subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp
             row = ActivityRow("WORK ORDER", SUCCESS, title, subtitle)
-            row.openRequested.connect(lambda e=entry: self._open_history_entry(e))
+            row.deleteRequested.connect(lambda e=entry: self._delete_history_entry(e))
             self.activity_layout.addWidget(row)
         self.activity_layout.addStretch(1)
 
-    def _open_history_entry(self, entry: HistoryEntry) -> None:
-        path = entry.output_path
-        if not path or not Path(path).exists():
-            QMessageBox.information(self, APP_TITLE, "That output file could not be found.")
+    def _delete_history_entry(self, entry: HistoryEntry) -> None:
+        reply = QMessageBox.question(
+            self, APP_TITLE,
+            f"Delete this work order from history?\n\n{entry.source_name or entry.project_name or 'Work order'}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
             return
-        if entry.kind == "workorder":
-            box = QMessageBox(self)
-            box.setWindowTitle(APP_TITLE)
-            box.setText(
-                f'"{entry.source_name or Path(path).name}" is a work order\'s source PDF.\n\n'
-                "Load it back into the program, or just open the file?"
-            )
-            load_button = box.addButton("Load into Program", QMessageBox.ButtonRole.AcceptRole)
-            open_button = box.addButton("Open File", QMessageBox.ButtonRole.ActionRole)
-            box.addButton(QMessageBox.StandardButton.Cancel)
-            box.exec()
-            clicked = box.clickedButton()
-            if clicked is load_button:
-                self.set_pdf_path(path)
-                self.analyze_work_list()
-                return
-            if clicked is not open_button:
-                return
-        if path.lower().endswith(".pdf"):
-            self._open_report_pdf(Path(path))
-        else:
-            open_with_system_default(path)
+        remove_history_entry(entry)
+        self._update_recent_activity()
 
     def open_hotwork_dialog(self) -> None:
         self.set_active_nav(HOTWORK_NAV_INDEX)
