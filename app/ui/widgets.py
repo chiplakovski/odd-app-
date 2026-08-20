@@ -211,17 +211,21 @@ class ReportFileRow(QFrame):
         # Stacked rather than side-by-side: this frees the title column from having to
         # share width with two buttons, which is what wrapping the full (long,
         # underscore-separated) filename above actually needs room for.
+        # Minimum, not fixed, width: a fixed pixel budget sized against this sandbox's
+        # font metrics still clipped "Delete" under Windows' actual font rendering -
+        # a minimum lets Qt's own size hint (which always fits the button's text) win
+        # whenever it needs more room, while still keeping Open/Delete the same width.
         button_layout = QVBoxLayout()
         button_layout.setSpacing(4)
         open_button = QPushButton("Open")
         open_button.setObjectName("secondaryButton")
-        open_button.setFixedWidth(58)
+        open_button.setMinimumWidth(70)
         open_button.clicked.connect(self.openRequested.emit)
         button_layout.addWidget(open_button)
 
         delete_button = QPushButton("Delete")
         delete_button.setObjectName("secondaryButton")
-        delete_button.setFixedWidth(58)
+        delete_button.setMinimumWidth(70)
         delete_button.setStyleSheet(f"color: {DANGER};")
         delete_button.clicked.connect(self.deleteRequested.emit)
         button_layout.addWidget(delete_button)

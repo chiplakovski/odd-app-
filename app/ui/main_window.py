@@ -55,7 +55,7 @@ from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDi
 from .os_utils import open_with_system_default
 from .pdf_viewer import PdfViewerDialog
 from .print_watch import PrintInboxWatcher
-from .theme import ACCENT, SUCCESS, WARNING, build_stylesheet
+from .theme import SUCCESS, WARNING, build_stylesheet
 from .widgets import ActivityRow, BackgroundWidget, BannerWidget, ReportFileRow, StatusBadgeDelegate, TitleBar, UploadDropFrame, add_shadow
 
 MAX_ACTIVITY_ROWS = 6
@@ -409,7 +409,7 @@ class MainWindow(QMainWindow):
         activity_icon = QLabel()
         activity_icon.setPixmap(icon("document").pixmap(22, 22))
         activity_header_layout.addWidget(activity_icon)
-        activity_title = QLabel("Recent Activity")
+        activity_title = QLabel("Work Order History")
         activity_title.setObjectName("groupTitle")
         activity_header_layout.addWidget(activity_title)
         activity_header_layout.addStretch(1)
@@ -859,25 +859,16 @@ class MainWindow(QMainWindow):
             widget = item.widget()
             if widget:
                 widget.deleteLater()
-        entries = load_history()[:MAX_ACTIVITY_ROWS]
+        entries = [entry for entry in load_history() if entry.kind == "workorder"][:MAX_ACTIVITY_ROWS]
         if not entries:
-            empty = QLabel("No work orders, reports, or hot work permits processed yet.")
+            empty = QLabel("No work orders processed yet.")
             empty.setObjectName("mutedLabel")
             empty.setWordWrap(True)
             self.activity_layout.addWidget(empty)
         for entry in entries:
-            if entry.kind == "hotwork":
-                title = f"Item {entry.item_number} · {entry.report_count} permit(s)"
-                subtitle = f"{entry.date_from} to {entry.date_to}"
-                row = ActivityRow("HOT WORK", WARNING, title, subtitle)
-            elif entry.kind == "workorder":
-                title = f"{entry.source_name or entry.project_name or 'Work order'} · {entry.item_count} item(s)"
-                subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp
-                row = ActivityRow("WORK ORDER", SUCCESS, title, subtitle)
-            else:
-                title = f"{entry.project_name or 'Report'} · {entry.report_count} report(s)"
-                subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp
-                row = ActivityRow("REPORT", ACCENT, title, subtitle)
+            title = f"{entry.source_name or entry.project_name or 'Work order'} · {entry.item_count} item(s)"
+            subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp
+            row = ActivityRow("WORK ORDER", SUCCESS, title, subtitle)
             row.openRequested.connect(lambda e=entry: self._open_history_entry(e))
             self.activity_layout.addWidget(row)
         self.activity_layout.addStretch(1)
