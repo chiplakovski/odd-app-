@@ -179,57 +179,63 @@ class ReportFileRow(QFrame):
     openRequested = Signal()
     deleteRequested = Signal()
 
-    # Report/permit filenames are underscore-separated with no spaces, so Qt's word-wrap
-    # (which only breaks at spaces) can't wrap them - an unwrapped long name reports its
-    # full width as the label's minimum size, which pushes Open/Delete outside the fixed-
-    # width right panel and, since that panel's horizontal scrollbar is disabled, clips
-    # them off entirely. Eliding to a fixed budget (with the full name in a tooltip) keeps
-    # the row width predictable regardless of filename length.
-    _TITLE_MAX_WIDTH = 180
-
     def __init__(self, title: str, subtitle: str) -> None:
         super().__init__()
         self.setObjectName("groupCard")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(8)
 
         badge = QLabel("PDF")
         badge.setAlignment(Qt.AlignCenter)
-        badge.setFixedSize(40, 20)
+        badge.setFixedSize(36, 18)
         badge.setStyleSheet(
-            f"background: {SUCCESS}; color: #0a1420; border-radius: 5px; font-weight: 700; font-size: 9px;"
+            f"background: {SUCCESS}; color: #0a1420; border-radius: 5px; font-weight: 700; font-size: 8px;"
         )
-        layout.addWidget(badge)
+        layout.addWidget(badge, 0, Qt.AlignTop)
 
         text_layout = QVBoxLayout()
-        text_layout.setSpacing(0)
-        title_label = QLabel()
+        text_layout.setSpacing(2)
+        title_label = QLabel(self._wrappable(title))
         title_label.setObjectName("groupTitle")
-        metrics = title_label.fontMetrics()
-        elided = metrics.elidedText(title, Qt.TextElideMode.ElideMiddle, self._TITLE_MAX_WIDTH)
-        title_label.setText(elided)
-        if elided != title:
-            title_label.setToolTip(title)
+        title_label.setWordWrap(True)
+        title_label.setStyleSheet("font-size: 10px;")
         subtitle_label = QLabel(subtitle)
         subtitle_label.setObjectName("groupJobs")
         subtitle_label.setWordWrap(True)
+        subtitle_label.setStyleSheet("font-size: 9px;")
         text_layout.addWidget(title_label)
         text_layout.addWidget(subtitle_label)
         layout.addLayout(text_layout, 1)
 
+        # Stacked rather than side-by-side: this frees the title column from having to
+        # share width with two buttons, which is what wrapping the full (long,
+        # underscore-separated) filename above actually needs room for.
+        button_layout = QVBoxLayout()
+        button_layout.setSpacing(4)
         open_button = QPushButton("Open")
         open_button.setObjectName("secondaryButton")
-        open_button.setFixedWidth(50)
+        open_button.setFixedWidth(58)
         open_button.clicked.connect(self.openRequested.emit)
-        layout.addWidget(open_button)
+        button_layout.addWidget(open_button)
 
         delete_button = QPushButton("Delete")
         delete_button.setObjectName("secondaryButton")
-        delete_button.setFixedWidth(50)
+        delete_button.setFixedWidth(58)
         delete_button.setStyleSheet(f"color: {DANGER};")
         delete_button.clicked.connect(self.deleteRequested.emit)
-        layout.addWidget(delete_button)
+        button_layout.addWidget(delete_button)
+        layout.addLayout(button_layout)
+
+    @staticmethod
+    def _wrappable(text: str) -> str:
+        """Insert a zero-width space after every underscore/hyphen so Qt's word-wrap
+        (which only breaks at spaces) has somewhere to break - report/permit filenames
+        are long and underscore-separated with no natural break points otherwise, which
+        without this makes the label report its unbroken width as its minimum size and
+        pushes the row wider than the fixed-width panel it lives in."""
+        zwsp = chr(0x200B)
+        return text.replace("_", "_" + zwsp).replace("-", "-" + zwsp)
 
 
 class ActivityRow(QFrame):
