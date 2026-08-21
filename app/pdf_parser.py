@@ -12,7 +12,7 @@ from .grouping import grouping_key
 from .models import WorkItem
 
 _HEADING_ONLY_RE = re.compile(
-    r"(?:STEEL|PIPE|PIPING|MECHANICAL|ELECTRICAL|OUTFITTING|PAINT|CARPENTRY|INSULATION)\s+WORK"
+    r"(?:STEEL|PIPE|PIPING|MECHANICAL|ELECTRICAL|OUTFITTING|PAINT|CARPENTRY|INSULATION)\s+WORKS?"
 )
 # A department-divider banner line, e.g. "****** Steel works ******" or "****** LSA ******"
 # - these mark the start of a section in the item-number sequence (often at a round
@@ -256,7 +256,7 @@ def _combine_wrapped_lines(lines: list[str]) -> list[str]:
                 line,
                 flags=re.I,
             )
-            or combined[-1].endswith((".", ":", ";"))
+            or combined[-1].endswith((".", ":"))
         )
         if is_new:
             combined.append(line)
@@ -267,8 +267,17 @@ def _combine_wrapped_lines(lines: list[str]) -> list[str]:
 
 def make_summary(description: str, item_number: int) -> str:
     lines = [x.strip() for x in description.splitlines() if x.strip()]
+    # Combine PDF line-wraps into full logical sentences *before* filtering out
+    # progress-log/boilerplate lines below - a date-prefixed entry like "16/8 Install
+    # doors ... watertightness" can wrap onto a second PDF line ("testing.") that
+    # carries no date prefix of its own. Filtering line-by-line first correctly drops
+    # the prefixed line but leaves that un-prefixed continuation behind as an orphaned
+    # fragment, which then gets glued onto unrelated real content - producing garbled
+    # summaries like "...adjusting of the hinges. testing. prepare for installing new."
+    combined_all = _combine_wrapped_lines(lines)
+
     filtered: list[str] = []
-    for line in lines:
+    for line in combined_all:
         low = line.lower()
         if re.match(r"^-?\s*\d{1,2}/\d{1,2}(?:/\d{2,4})?\s*:?[\s-]", line):
             continue
@@ -289,7 +298,6 @@ def make_summary(description: str, item_number: int) -> str:
             continue
         filtered.append(line)
 
-    combined = _combine_wrapped_lines(filtered)
     # Suppress repetitive sketch-reference lines (there can be a dozen "Sketch N" lines
     # in a row that add nothing once you've seen a few), but otherwise keep the whole
     # description - a real work item's full text can run well past what used to be a
@@ -298,7 +306,7 @@ def make_summary(description: str, item_number: int) -> str:
     # generated report rather than just trimming boilerplate.
     chosen: list[str] = []
     sketch_count = 0
-    for line in combined:
+    for line in filtered:
         if line.lower().startswith("sketch"):
             sketch_count += 1
             if sketch_count > 3:
@@ -306,11 +314,11 @@ def make_summary(description: str, item_number: int) -> str:
         if line not in chosen:
             chosen.append(line)
     if not chosen:
-        chosen = combined[:5] or [f"Work under item {item_number}."]
+        chosen = filtered[:5] or [f"Work under item {item_number}."]
     return "\n".join(chosen)
 
 
-def _is_heading_only(description: str) -> bool:
+def _is_heading_only(description: str, owner_no: str = "", status: str = "") -> bool:
     lines = [line.strip() for line in description.strip().splitlines() if line.strip()]
     if len(lines) != 1:
         return False
@@ -318,7 +326,16 @@ def _is_heading_only(description: str) -> bool:
     if _ASTERISK_BANNER_ONLY_RE.match(title):
         return True
     bare = title.upper().rstrip(":")
-    return bool(bare) and bool(_HEADING_ONLY_RE.fullmatch(bare))
+    if bare and _HEADING_ONLY_RE.fullmatch(bare):
+        return True
+    # A single all-caps line with neither an owner reference nor a status is almost
+    # certainly a department-divider banner rather than a real work item - department
+    # names on a real work list aren't limited to the ones enumerated above (e.g.
+    # "INTERIOR / INSULATION WORKS", "LSA & SAFETY EQUIPMENT"), but a genuine work item
+    # always carries at least one of owner/status, even when its own text is short.
+    if not owner_no.strip() and not status.strip() and title == title.upper() and any(c.isalpha() for c in title):
+        return True
+    return False
 
 
 def parse_work_items(
@@ -356,7 +373,7 @@ def _finish_item(item: WorkItem, buffer: list[str]) -> WorkItem | None:
     item.description = "\n".join(clean_description_lines(buffer)).strip()
     item.summary = make_summary(item.description, item.number)
     item.group = grouping_key(item)
-    if not item.description.strip() or _is_heading_only(item.description):
+    if not item.description.strip() or _is_heading_only(item.description, item.owner_no, item.status):
         return None
     item.included = item.group not in AUTO_EXCLUDED_GROUPS
     return item
