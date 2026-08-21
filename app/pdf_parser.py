@@ -365,46 +365,58 @@ def _finish_item(item: WorkItem, buffer: list[str]) -> WorkItem | None:
 _COLUMN_GAP_RE = re.compile(r" {3,}")
 
 
-def _split_columns(line: str) -> list[str]:
-    """Splits a layout-extracted line on runs of 3+ spaces - the gap layout-mode
-    PDF text uses between table columns. This adapts to each line's own actual
-    content width, unlike slicing at fixed character positions computed once from
-    the header row: that drifts page to page, and can even misalign within a page
-    when a row's own columns render narrower/wider than the header's - which
-    silently dropped or misplaced real item text on real-world work lists."""
-    return [p.strip() for p in _COLUMN_GAP_RE.split(line.strip()) if p.strip()]
+def _split_columns_with_pos(line: str) -> list[tuple[int, str]]:
+    """Splits a layout-extracted line on runs of 3+ spaces - the gap layout-mode PDF
+    text uses between table columns - and returns each chunk together with its actual
+    character start position in the line. Column identity on a header row can't be
+    inferred from chunk order alone (e.g. Owner+Text+Status vs. just Text+Status when
+    Shipowner No. is blank for that item), so _assign_by_position below buckets each
+    chunk against the page's own column boundaries instead - which also tolerates a
+    row's content rendering a few characters off from the header's positions, unlike
+    hard-slicing at fixed offsets."""
+    chunks: list[tuple[int, str]] = []
+    last_end = 0
+    for m in _COLUMN_GAP_RE.finditer(line):
+        piece = line[last_end : m.start()]
+        stripped = piece.strip()
+        if stripped:
+            offset = len(piece) - len(piece.lstrip())
+            chunks.append((last_end + offset, stripped))
+        last_end = m.end()
+    piece = line[last_end:]
+    stripped = piece.strip()
+    if stripped:
+        offset = len(piece) - len(piece.lstrip())
+        chunks.append((last_end + offset, stripped))
+    return chunks
 
 
-def _looks_like_status(value: str) -> bool:
-    lowered = value.strip().lower()
-    return any(lowered.startswith(v.lower()) for v in STATUS_VALUES) or any(
-        lowered.startswith(alias) for alias, _ in _STATUS_ALIASES
-    )
-
-
-def _split_item_fields(fields: list[str]) -> tuple[str, str, str]:
-    """fields = whitespace-gap-separated pieces after the item number on a header
-    row. Owner-no is always first; a recognized status word, if present, is always
-    last (with the text field, if present, in between) - checked by content since
-    field count on a given row varies from 1 (owner only) up to 3 (owner+text+status)."""
-    if not fields:
-        return "", "", ""
-    owner = fields[0]
-    rest = fields[1:]
-    if rest and _looks_like_status(rest[-1]):
-        status = rest[-1]
-        text = " ".join(rest[:-1])
-    else:
-        status = ""
-        text = " ".join(rest)
-    return owner, text, status
+def _assign_by_position(chunks: list[tuple[int, str]], columns: tuple[int, int, int, int]) -> tuple[str, str, str]:
+    """Buckets header-row chunks (the item number already removed) into owner/text/
+    status by comparing each chunk's start position against the midpoints between the
+    page's Shipowner No./Text/Status column boundaries - so a blank column is simply
+    skipped rather than shifting a later column's content into the wrong field."""
+    _, owner_pos, text_pos, status_pos = columns
+    owner_text_mid = (owner_pos + text_pos) / 2
+    text_status_mid = (text_pos + status_pos) / 2
+    owner_parts: list[str] = []
+    text_parts: list[str] = []
+    status_parts: list[str] = []
+    for start, value in chunks:
+        if start < owner_text_mid:
+            owner_parts.append(value)
+        elif start < text_status_mid:
+            text_parts.append(value)
+        else:
+            status_parts.append(value)
+    return " ".join(owner_parts), " ".join(text_parts), " ".join(status_parts)
 
 
 def _parse_columnar(text: str, project_number: str, start_item: int, end_item: int) -> list[WorkItem]:
     items: list[WorkItem] = []
     current: WorkItem | None = None
     buffer: list[str] = []
-    table_started = False
+    columns: tuple[int, int, int, int] | None = None
 
     def flush() -> None:
         nonlocal current, buffer
@@ -417,18 +429,24 @@ def _parse_columnar(text: str, project_number: str, start_item: int, end_item: i
 
     for raw in text.splitlines():
         line = raw.rstrip("\n")
-        if re.search(r"\bItem\b\s+Shipowner No\.\s+Text\s+Status\s*$", line):
-            table_started = True
-            continue
-        if not table_started:
+        header_match = re.search(r"\bItem\b\s+Shipowner No\.\s+Text\s+Status\s*$", line)
+        if header_match:
+            item_pos = line.index("Item")
+            owner_pos = line.index("Shipowner", item_pos)
+            text_pos = line.index("Text", owner_pos)
+            status_pos = line.rindex("Status")
+            columns = (item_pos, owner_pos, text_pos, status_pos)
             continue
 
-        fields = _split_columns(line)
-        if fields and re.fullmatch(r"\d{4}", fields[0]):
+        if columns is None:
+            continue
+
+        chunks = _split_columns_with_pos(line)
+        if chunks and re.fullmatch(r"\d{4}", chunks[0][1]):
             flush()
-            number = int(fields[0])
+            number = int(chunks[0][1])
             if start_item <= number <= end_item:
-                owner_field, text_field, status_field = _split_item_fields(fields[1:])
+                owner_field, text_field, status_field = _assign_by_position(chunks[1:], columns)
                 status = _normalize_status(status_field)
                 current = WorkItem(number=number, owner_no=owner_field, status=status, description="")
                 if text_field:
@@ -437,7 +455,7 @@ def _parse_columnar(text: str, project_number: str, start_item: int, end_item: i
 
         if current is None:
             continue
-        line_stripped = " ".join(line.strip().split())
+        line_stripped = " ".join(value for _, value in chunks)
         if line_stripped and not _is_page_noise(line_stripped, project_number) and not _is_layout_noise_fragment(line_stripped):
             buffer.append(line_stripped)
 
