@@ -362,11 +362,49 @@ def _finish_item(item: WorkItem, buffer: list[str]) -> WorkItem | None:
     return item
 
 
+_COLUMN_GAP_RE = re.compile(r" {3,}")
+
+
+def _split_columns(line: str) -> list[str]:
+    """Splits a layout-extracted line on runs of 3+ spaces - the gap layout-mode
+    PDF text uses between table columns. This adapts to each line's own actual
+    content width, unlike slicing at fixed character positions computed once from
+    the header row: that drifts page to page, and can even misalign within a page
+    when a row's own columns render narrower/wider than the header's - which
+    silently dropped or misplaced real item text on real-world work lists."""
+    return [p.strip() for p in _COLUMN_GAP_RE.split(line.strip()) if p.strip()]
+
+
+def _looks_like_status(value: str) -> bool:
+    lowered = value.strip().lower()
+    return any(lowered.startswith(v.lower()) for v in STATUS_VALUES) or any(
+        lowered.startswith(alias) for alias, _ in _STATUS_ALIASES
+    )
+
+
+def _split_item_fields(fields: list[str]) -> tuple[str, str, str]:
+    """fields = whitespace-gap-separated pieces after the item number on a header
+    row. Owner-no is always first; a recognized status word, if present, is always
+    last (with the text field, if present, in between) - checked by content since
+    field count on a given row varies from 1 (owner only) up to 3 (owner+text+status)."""
+    if not fields:
+        return "", "", ""
+    owner = fields[0]
+    rest = fields[1:]
+    if rest and _looks_like_status(rest[-1]):
+        status = rest[-1]
+        text = " ".join(rest[:-1])
+    else:
+        status = ""
+        text = " ".join(rest)
+    return owner, text, status
+
+
 def _parse_columnar(text: str, project_number: str, start_item: int, end_item: int) -> list[WorkItem]:
     items: list[WorkItem] = []
     current: WorkItem | None = None
     buffer: list[str] = []
-    columns: tuple[int, int, int, int] | None = None
+    table_started = False
 
     def flush() -> None:
         nonlocal current, buffer
@@ -379,28 +417,18 @@ def _parse_columnar(text: str, project_number: str, start_item: int, end_item: i
 
     for raw in text.splitlines():
         line = raw.rstrip("\n")
-        header_match = re.search(r"\bItem\b\s+Shipowner No\.\s+Text\s+Status\s*$", line)
-        if header_match:
-            item_pos = line.index("Item")
-            owner_pos = line.index("Shipowner", item_pos)
-            text_pos = line.index("Text", owner_pos)
-            status_pos = line.rindex("Status")
-            columns = (item_pos, owner_pos, text_pos, status_pos)
+        if re.search(r"\bItem\b\s+Shipowner No\.\s+Text\s+Status\s*$", line):
+            table_started = True
+            continue
+        if not table_started:
             continue
 
-        if columns is None:
-            continue
-        item_pos, owner_pos, text_pos, status_pos = columns
-        padded = line + " " * max(0, status_pos + 1 - len(line))
-        item_field = padded[item_pos:owner_pos].strip()
-        owner_field = padded[owner_pos:text_pos].strip()
-        text_field = padded[text_pos:status_pos].strip()
-        status_field = padded[status_pos:].strip()
-
-        if re.fullmatch(r"\d{4}", item_field):
+        fields = _split_columns(line)
+        if fields and re.fullmatch(r"\d{4}", fields[0]):
             flush()
-            number = int(item_field)
+            number = int(fields[0])
             if start_item <= number <= end_item:
+                owner_field, text_field, status_field = _split_item_fields(fields[1:])
                 status = _normalize_status(status_field)
                 current = WorkItem(number=number, owner_no=owner_field, status=status, description="")
                 if text_field:
@@ -409,8 +437,9 @@ def _parse_columnar(text: str, project_number: str, start_item: int, end_item: i
 
         if current is None:
             continue
-        if text_field and not _is_page_noise(text_field, project_number) and not _is_layout_noise_fragment(text_field):
-            buffer.append(text_field)
+        line_stripped = " ".join(line.strip().split())
+        if line_stripped and not _is_page_noise(line_stripped, project_number) and not _is_layout_noise_fragment(line_stripped):
+            buffer.append(line_stripped)
 
     flush()
     return items

@@ -243,11 +243,10 @@ class ReportFileRow(QFrame):
 
 
 class ActivityRow(QFrame):
-    """A compact row in the Work Order History list: a kind badge, title/subtitle, and a
-    Delete button (the row itself is informational, not clickable to open - deleting is
-    the only action this list offers, since re-loading a work order is done by dropping
-    the PDF in again rather than reopening a history entry)."""
+    """A row in the Work Order History list: a kind badge, title/subtitle, and
+    Open/Delete actions (mirrors ReportFileRow's stacked-vertical button layout)."""
 
+    openRequested = Signal()
     deleteRequested = Signal()
 
     def __init__(self, kind_label: str, kind_color: str, title: str, subtitle: str) -> None:
@@ -263,7 +262,7 @@ class ActivityRow(QFrame):
         badge.setStyleSheet(
             f"background: {kind_color}; color: #0a1420; border-radius: 5px; font-weight: 700; font-size: 9px;"
         )
-        layout.addWidget(badge)
+        layout.addWidget(badge, 0, Qt.AlignTop)
 
         text_layout = QVBoxLayout()
         text_layout.setSpacing(0)
@@ -277,12 +276,24 @@ class ActivityRow(QFrame):
         text_layout.addWidget(subtitle_label)
         layout.addLayout(text_layout, 1)
 
+        # Minimum, not fixed, width - see ReportFileRow._wrappable's neighboring
+        # comment: a fixed budget sized against this sandbox's font metrics still
+        # clipped button text under Windows' actual font rendering.
+        button_layout = QVBoxLayout()
+        button_layout.setSpacing(4)
+        open_button = QPushButton("Open")
+        open_button.setObjectName("secondaryButton")
+        open_button.setMinimumWidth(70)
+        open_button.clicked.connect(self.openRequested.emit)
+        button_layout.addWidget(open_button)
+
         delete_button = QPushButton("Delete")
         delete_button.setObjectName("secondaryButton")
         delete_button.setMinimumWidth(70)
         delete_button.setStyleSheet(f"color: {DANGER};")
         delete_button.clicked.connect(self.deleteRequested.emit)
-        layout.addWidget(delete_button)
+        button_layout.addWidget(delete_button)
+        layout.addLayout(button_layout)
 
 
 class StatusBadgeDelegate(QStyledItemDelegate):

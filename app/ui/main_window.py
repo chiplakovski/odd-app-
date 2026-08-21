@@ -867,9 +867,16 @@ class MainWindow(QMainWindow):
             title = f"{entry.source_name or entry.project_name or 'Work order'} · {entry.item_count} item(s)"
             subtitle = f"{entry.category_name} {entry.range_start}-{entry.range_end}" if entry.category_name else entry.timestamp
             row = ActivityRow("WORK ORDER", SUCCESS, title, subtitle)
+            row.openRequested.connect(lambda e=entry: self._open_history_entry(e))
             row.deleteRequested.connect(lambda e=entry: self._delete_history_entry(e))
             self.activity_layout.addWidget(row)
         self.activity_layout.addStretch(1)
+
+    def _open_history_entry(self, entry: HistoryEntry) -> None:
+        if not entry.source_path:
+            QMessageBox.information(self, APP_TITLE, "No source file is recorded for this work order.")
+            return
+        self._open_report_pdf(Path(entry.source_path))
 
     def _delete_history_entry(self, entry: HistoryEntry) -> None:
         reply = QMessageBox.question(
