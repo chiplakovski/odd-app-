@@ -14,6 +14,44 @@ from .models import WorkItem
 _HEADING_ONLY_RE = re.compile(
     r"(?:STEEL|PIPE|PIPING|MECHANICAL|ELECTRICAL|OUTFITTING|PAINT|CARPENTRY|INSULATION)\s+WORK"
 )
+# A department-divider banner line, e.g. "****** Steel works ******" or "****** LSA ******"
+# - these mark the start of a section in the item-number sequence (often at a round
+# number like x000) and aren't real work items, regardless of what department name is
+# inside the asterisks. Matched by structure rather than an enumerated list of department
+# names, since a work list's section names aren't limited to the ones _HEADING_ONLY_RE
+# happens to know.
+_ASTERISK_BANNER_ONLY_RE = re.compile(r"^\*{2,}\s*.+?\s*\*{2,}$")
+
+# Some customers' work lists (seen on Swedish Navy / Saab Kockums exports) use short
+# Swedish status words instead of STATUS_VALUES, often immediately followed - with no
+# separating space, since it's a distinct, tightly-adjacent layout column - by an
+# unrelated reference/tracking code (e.g. "KlartMIMI: 255", "PågårFU-326"). Matching a
+# known word as a *prefix* of the raw status text, rather than requiring the whole
+# field to equal it, both recognizes the status correctly and drops the glued-on
+# tracking code instead of treating it as part of the status. Getting this right
+# matters beyond just the displayed status: "Only include Finished/Completed items"
+# compares against STATUS_VALUES, so an unrecognized status silently excludes an
+# otherwise-finished item from the report.
+_STATUS_ALIASES: list[tuple[str, str]] = [
+    ("klart", "Finished"),
+    ("pågår", "In progress"),
+    ("pagar", "In progress"),  # in case an accented character is lost in extraction
+    ("pending", "On hold"),
+    ("utgår", "Cancelled"),
+    ("utgar", "Cancelled"),
+]
+
+
+def _normalize_status(raw: str) -> str:
+    stripped = raw.strip()
+    lowered = stripped.lower()
+    for value in STATUS_VALUES:
+        if lowered.startswith(value.lower()):
+            return value
+    for alias, mapped in _STATUS_ALIASES:
+        if lowered.startswith(alias):
+            return mapped
+    return stripped
 
 
 def extract_pdf_text(pdf_path: Path) -> str:
@@ -140,12 +178,12 @@ def _match_item_header(line: str) -> tuple[int, str, str] | None:
     clean = " ".join(line.strip().split())
     if not clean:
         return None
-    status_re = "|".join(re.escape(s) for s in STATUS_VALUES)
+    status_re = "|".join(re.escape(s) for s in (*STATUS_VALUES, *(alias for alias, _ in _STATUS_ALIASES)))
     m = re.match(rf"^(\d{{4}})(?:\s+(\S+?))?\s+({status_re})$", clean, flags=re.I)
     if m:
         number = int(m.group(1))
         owner = (m.group(2) or "").strip()
-        status = next((s for s in STATUS_VALUES if s.lower() == m.group(3).lower()), m.group(3))
+        status = _normalize_status(m.group(3))
         return number, owner, status
     m = re.match(r"^(\d{4})(?:\s+(\S+))?$", clean)
     if m:
@@ -252,7 +290,12 @@ def make_summary(description: str, item_number: int) -> str:
         filtered.append(line)
 
     combined = _combine_wrapped_lines(filtered)
-    # Prefer scope/location and measurable outcome; suppress repetitive sketch lists.
+    # Suppress repetitive sketch-reference lines (there can be a dozen "Sketch N" lines
+    # in a row that add nothing once you've seen a few), but otherwise keep the whole
+    # description - a real work item's full text can run well past what used to be a
+    # 7-line/720-character cap here (some are genuinely long, e.g. bilingual entries),
+    # and cutting it off mid-item silently dropped real scope/instructions from the
+    # generated report rather than just trimming boilerplate.
     chosen: list[str] = []
     sketch_count = 0
     for line in combined:
@@ -262,19 +305,20 @@ def make_summary(description: str, item_number: int) -> str:
                 continue
         if line not in chosen:
             chosen.append(line)
-        if len(chosen) >= 7:
-            break
     if not chosen:
         chosen = combined[:5] or [f"Work under item {item_number}."]
-    summary = "\n".join(chosen)
-    if len(summary) > 720:
-        summary = summary[:717].rsplit(" ", 1)[0] + "..."
-    return summary
+    return "\n".join(chosen)
 
 
 def _is_heading_only(description: str) -> bool:
-    title = description.strip().upper().rstrip(":")
-    return bool(title) and bool(_HEADING_ONLY_RE.fullmatch(title))
+    lines = [line.strip() for line in description.strip().splitlines() if line.strip()]
+    if len(lines) != 1:
+        return False
+    title = lines[0]
+    if _ASTERISK_BANNER_ONLY_RE.match(title):
+        return True
+    bare = title.upper().rstrip(":")
+    return bool(bare) and bool(_HEADING_ONLY_RE.fullmatch(bare))
 
 
 def parse_work_items(
@@ -357,7 +401,7 @@ def _parse_columnar(text: str, project_number: str, start_item: int, end_item: i
             flush()
             number = int(item_field)
             if start_item <= number <= end_item:
-                status = next((s for s in STATUS_VALUES if s.lower() == status_field.lower()), status_field)
+                status = _normalize_status(status_field)
                 current = WorkItem(number=number, owner_no=owner_field, status=status, description="")
                 if text_field:
                     buffer.append(text_field)
