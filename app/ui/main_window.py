@@ -873,10 +873,25 @@ class MainWindow(QMainWindow):
         self.activity_layout.addStretch(1)
 
     def _open_history_entry(self, entry: HistoryEntry) -> None:
+        """Loads this work order back into the Work List Processing panel, the same as
+        dropping/browsing its PDF in fresh - not just viewing the PDF - since that's the
+        point of history: pick up a previous work order without re-finding the file."""
         if not entry.source_path:
             QMessageBox.information(self, APP_TITLE, "No source file is recorded for this work order.")
             return
-        self._open_report_pdf(Path(entry.source_path))
+        path = Path(entry.source_path)
+        if not path.exists():
+            QMessageBox.information(self, APP_TITLE, "That work order's source file could not be found.")
+            return
+        self.set_active_nav(IMPORT_NAV_INDEX)
+        if entry.category_name:
+            self.category_name = entry.category_name
+            self.range_start = entry.range_start
+            self.range_end = entry.range_end
+            self.work_range.setText(self._work_range_text())
+            self.nav_buttons[GROUP_NAV_INDEX].setText(self._group_nav_label())
+        self.set_pdf_path(str(path))
+        self.analyze_work_list()
 
     def _delete_history_entry(self, entry: HistoryEntry) -> None:
         reply = QMessageBox.question(
