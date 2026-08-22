@@ -35,7 +35,7 @@ from ..backup import export_app_data, import_app_data
 from ..config import APP_TITLE, ProjectInfo, WORK_CATEGORY_PRESETS
 from ..history import HistoryEntry, clear_history
 from ..hotwork import HotWorkChecklist
-from ..hotwork_export import default_location
+from ..hotwork_export import LOCATION_MAX_CHARS, default_location
 from ..models import WorkItem
 from .os_utils import open_with_system_default
 
@@ -425,9 +425,10 @@ class HotWorkDialog(QDialog):
             outer.addWidget(warning)
 
         outer.addWidget(self._section_label(
-            "Location for each item (required - a permit isn't generated for an item left "
-            "blank). Pre-filled from the item's own text - add to it if needed, e.g. "
-            "\"...- main deck cargo hold 1,2,3\""
+            f"Location for each item (required - a permit isn't generated for an item left "
+            f"blank, max {LOCATION_MAX_CHARS} characters so it always fits the permit's "
+            f"Location box on one line). Pre-filled from the item's own text - add to it "
+            f"if needed, e.g. \"...- main deck cargo hold 1,2,3\""
         ))
         items_container = QWidget()
         items_layout = QVBoxLayout(items_container)
@@ -442,9 +443,12 @@ class HotWorkDialog(QDialog):
             # Pre-filled as real (not placeholder) text: "<item> - <short description>", so
             # it's already a valid location on its own and the user can just click at the
             # end and add to it (e.g. "...- main deck cargo hold 1,2,3") instead of retyping
-            # the whole thing from scratch.
+            # the whole thing from scratch. setMaxLength before setText so a too-long saved
+            # location from before this cap existed gets truncated too, not just new input.
             default_text = f"{item.number} - {default_location(item)}"
-            edit = QLineEdit(initial_locations.get(item.number, "") or default_text)
+            edit = QLineEdit()
+            edit.setMaxLength(LOCATION_MAX_CHARS)
+            edit.setText(initial_locations.get(item.number, "") or default_text)
             row.addWidget(edit, 1)
             self._location_edits[item.number] = edit
             items_layout.addLayout(row)

@@ -31,6 +31,22 @@ _MC_FALLBACK = f"{_MC_NS}Fallback"
 EXPECTED_TEXTBOX_COUNT = 7
 EXPECTED_CHECKBOX_COUNT = 28
 
+# The permit template's Location field is a fixed-size floating text box (~3.47in wide,
+# single line tall) rendered in 9pt Arial (the "Normal" style it inherits - see
+# HOTWORK_TEMPLATE's styles.xml). Using Arial's documented average character width
+# (OS/2.xAvgCharWidth 904/2048 em ~= 0.44em, i.e. ~4.0pt/char at 9pt) against the box's
+# usable width after its own 0.1in left/right insets (~235pt) gives a one-line capacity
+# of roughly 58 characters for typical text; the UI enforces a somewhat lower hard cap
+# (LOCATION_MAX_CHARS) to leave margin for the wider-than-average digits in the
+# "<item number> - " prefix the UI adds, so text entered there can never overflow the
+# box onto a second line or past its edge in the generated permit.
+LOCATION_MAX_CHARS = 50
+# The auto-derived description alone is truncated well below LOCATION_MAX_CHARS - after
+# the "<item number> - " prefix (always 7 characters: 4 digits + " - "), this leaves
+# real room for the user to add their own detail (e.g. "- main deck cargo hold 1,2,3")
+# without immediately hitting the hard cap.
+_LOCATION_DESCRIPTION_MAX_CHARS = 28
+
 
 def default_location(item: WorkItem) -> str:
     """A short description of this specific litra, for the permit's Location field.
@@ -42,8 +58,8 @@ def default_location(item: WorkItem) -> str:
     text = (item.summary or item.description or "").strip()
     first_line = next((line.strip() for line in text.splitlines() if line.strip()), "")
     if first_line:
-        if len(first_line) > 70:
-            first_line = first_line[:67].rsplit(" ", 1)[0] + "..."
+        if len(first_line) > _LOCATION_DESCRIPTION_MAX_CHARS:
+            first_line = first_line[: _LOCATION_DESCRIPTION_MAX_CHARS - 3].rsplit(" ", 1)[0] + "..."
         return first_line
     return display_group_name(item.group) if item.group else f"Item {item.number}"
 
