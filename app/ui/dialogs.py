@@ -425,7 +425,9 @@ class HotWorkDialog(QDialog):
             outer.addWidget(warning)
 
         outer.addWidget(self._section_label(
-            "Location for each item (required - a permit isn't generated for an item left blank), e.g. \"main deck\""
+            "Location for each item (required - a permit isn't generated for an item left "
+            "blank). Pre-filled from the item's own text - add to it if needed, e.g. "
+            "\"...- main deck cargo hold 1,2,3\""
         ))
         items_container = QWidget()
         items_layout = QVBoxLayout(items_container)
@@ -437,8 +439,12 @@ class HotWorkDialog(QDialog):
             number_label.setObjectName("groupTitle")
             number_label.setFixedWidth(50)
             row.addWidget(number_label)
-            edit = QLineEdit(initial_locations.get(item.number, ""))
-            edit.setPlaceholderText(default_location(item))
+            # Pre-filled as real (not placeholder) text: "<item> - <short description>", so
+            # it's already a valid location on its own and the user can just click at the
+            # end and add to it (e.g. "...- main deck cargo hold 1,2,3") instead of retyping
+            # the whole thing from scratch.
+            default_text = f"{item.number} - {default_location(item)}"
+            edit = QLineEdit(initial_locations.get(item.number, "") or default_text)
             row.addWidget(edit, 1)
             self._location_edits[item.number] = edit
             items_layout.addLayout(row)
