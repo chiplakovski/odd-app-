@@ -1,6 +1,7 @@
 """Modal dialogs: settings, work category selection, litra grouping, summary editing, history."""
 from __future__ import annotations
 
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -29,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..backup import export_app_data, import_app_data
 from ..config import APP_TITLE, ProjectInfo, WORK_CATEGORY_PRESETS
 from ..history import HistoryEntry, clear_history
 from ..hotwork import HotWorkChecklist
@@ -82,10 +85,68 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         note.setObjectName("mutedLabel")
         layout.addWidget(note)
+
+        backup_row = QHBoxLayout()
+        export_button = QPushButton("Export App Data...")
+        export_button.setObjectName("secondaryButton")
+        export_button.clicked.connect(self._export_app_data)
+        backup_row.addWidget(export_button)
+        import_button = QPushButton("Import App Data...")
+        import_button.setObjectName("secondaryButton")
+        import_button.clicked.connect(self._import_app_data)
+        backup_row.addWidget(import_button)
+        backup_row.addStretch(1)
+        layout.addLayout(backup_row)
+        backup_note = QLabel(
+            "Export saves all settings, work order/report/hot work history, hot work "
+            "checklists, and generated project files to one zip file - useful before "
+            "reinstalling or moving to a new computer. Import restores from a previously "
+            "exported zip (restart the app afterwards)."
+        )
+        backup_note.setWordWrap(True)
+        backup_note.setObjectName("mutedLabel")
+        layout.addWidget(backup_note)
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _export_app_data(self) -> None:
+        default_name = f"ODD_App_Data_Backup_{date.today().isoformat()}.zip"
+        path, _ = QFileDialog.getSaveFileName(self, "Export App Data", default_name, "Zip files (*.zip)")
+        if not path:
+            return
+        if not path.lower().endswith(".zip"):
+            path += ".zip"
+        try:
+            count = export_app_data(Path(path))
+        except OSError as exc:
+            QMessageBox.critical(self, APP_TITLE, f"Could not export app data:\n\n{exc}")
+            return
+        QMessageBox.information(self, APP_TITLE, f"Exported {count} file(s) to:\n\n{path}")
+
+    def _import_app_data(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Import App Data", "", "Zip files (*.zip)")
+        if not path:
+            return
+        reply = QMessageBox.question(
+            self, APP_TITLE,
+            "Importing will overwrite any existing settings, history, and project files "
+            "that also exist in this backup. Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            count = import_app_data(Path(path))
+        except (OSError, zipfile.BadZipFile) as exc:
+            QMessageBox.critical(self, APP_TITLE, f"Could not import app data:\n\n{exc}")
+            return
+        QMessageBox.information(
+            self, APP_TITLE,
+            f"Imported {count} file(s) from:\n\n{path}\n\nRestart the app for all changes to take effect.",
+        )
 
 
 class WorkCategoryDialog(QDialog):
