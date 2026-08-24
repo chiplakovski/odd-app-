@@ -37,6 +37,7 @@ from ..config import (
     INSPECTION_REPORT_SUBFOLDER,
     MASTER_TEMPLATE,
     PRINT_INBOX_DIR,
+    USER_DATA_DIR,
     ProjectInfo,
     load_settings,
     project_output_dir,
@@ -52,7 +53,7 @@ from ..pdf_export import convert_docx_to_pdf
 from ..pdf_parser import detect_personnel, detect_project, extract_pdf_text, parse_work_items
 from .assets import asset, icon
 from .dialogs import EditSummaryDialog, HistoryDialog, HotWorkDialog, SettingsDialog, WorkCategoryDialog
-from .os_utils import open_with_system_default
+from .os_utils import open_with_system_default, pin_to_quick_access
 from .pdf_viewer import PdfViewerDialog
 from .print_watch import PrintInboxWatcher
 from .theme import SUCCESS, WARNING, build_stylesheet
@@ -104,6 +105,22 @@ class MainWindow(QMainWindow):
         self._print_watcher = PrintInboxWatcher(self)
         self._print_watcher.fileReady.connect(self._on_print_job_ready)
         self._print_watcher.scan_existing()
+        self._ensure_print_inbox_pinned()
+
+    def _ensure_print_inbox_pinned(self) -> None:
+        """Best-effort, once per install: pin the Print Inbox folder to Windows' Quick
+        Access so it's one click away in the "Microsoft Print to PDF" Save dialog instead
+        of a full folder-tree navigation - that navigation is the main manual step in
+        printing a work list into the app. A marker file avoids retrying (and re-pinning,
+        which is harmless but pointless) on every launch once it's succeeded once."""
+        marker = USER_DATA_DIR / ".print_inbox_pinned"
+        if marker.exists():
+            return
+        if pin_to_quick_access(str(PRINT_INBOX_DIR)):
+            try:
+                marker.write_text("1", encoding="utf-8")
+            except OSError:
+                pass
 
     def _on_print_job_ready(self, path: str) -> None:
         """A PDF landed in the Print Inbox folder (see print_watch.py) - load it like any
@@ -268,8 +285,9 @@ class MainWindow(QMainWindow):
         print_inbox_row = QHBoxLayout()
         print_inbox_row.setSpacing(8)
         print_inbox_tip = QLabel(
-            'Tip: print anything to "Microsoft Print to PDF" (built into Windows, no install needed), '
-            "save it into the Print Inbox folder, and it loads here automatically."
+            'Tip: print anything to "Microsoft Print to PDF" (built into Windows, no install needed) - '
+            'the Print Inbox folder is pinned under Quick Access in that Save dialog, so it\'s one click '
+            "away. Any filename works, so you can just hit Save - it loads here automatically."
         )
         print_inbox_tip.setObjectName("mutedLabel")
         print_inbox_tip.setWordWrap(True)
